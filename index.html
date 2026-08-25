@@ -260,7 +260,7 @@
 
   <p class="eyebrow">Datenschutz</p>
   <h1>Datenschutzerklärung</h1>
-  <p class="updated">Stand: 25. August 2026</p>
+  <p class="updated">Stand: 26. August 2026</p>
 
   <p class="lede">
     PflegePro ist eine Lern-App für die Pflegeausbildung. Diese Erklärung beschreibt in
@@ -273,15 +273,16 @@
     <ol>
       <li><a href="#verantwortlicher">1. Verantwortlicher</a></li>
       <li><a href="#daten">2. Welche Daten verarbeitet werden</a></li>
-      <li><a href="#konto">3. Kein Konto, keine Registrierung</a></li>
-      <li><a href="#tracking">4. Keine Analyse- oder Tracking-Tools</a></li>
-      <li><a href="#werbung">5. Keine Werbung</a></li>
-      <li><a href="#berechtigungen">6. App-Berechtigungen</a></li>
-      <li><a href="#kontrolle">7. Deine Kontrolle über deine Daten</a></li>
-      <li><a href="#play">8. Google Play Services</a></li>
-      <li><a href="#minderjaehrige">9. Nutzung durch Auszubildende</a></li>
-      <li><a href="#aenderungen">10. Änderungen dieser Erklärung</a></li>
-      <li><a href="#kontakt">11. Kontakt</a></li>
+      <li><a href="#cloud-sync">3. Optionale Cloud-Synchronisierung</a></li>
+      <li><a href="#konto">4. Kein Konto, keine Registrierung</a></li>
+      <li><a href="#tracking">5. Keine Analyse- oder Tracking-Tools</a></li>
+      <li><a href="#werbung">6. Keine Werbung</a></li>
+      <li><a href="#berechtigungen">7. App-Berechtigungen</a></li>
+      <li><a href="#kontrolle">8. Deine Kontrolle über deine Daten</a></li>
+      <li><a href="#play">9. Google Play Services</a></li>
+      <li><a href="#minderjaehrige">10. Nutzung durch Auszubildende</a></li>
+      <li><a href="#aenderungen">11. Änderungen dieser Erklärung</a></li>
+      <li><a href="#kontakt">12. Kontakt</a></li>
     </ol>
   </nav>
 
@@ -307,14 +308,46 @@
     </p>
     <div class="fact-row">
       <span class="fact-row__icon" aria-hidden="true">📱</span>
-      <p>Es gibt <strong>keinen eigenen Server</strong> und <strong>keine Cloud-Synchronisierung</strong>.
-      Wenn du die App deinstallierst oder den Gerätespeicher leerst, sind diese Daten
-      unwiderruflich gelöscht.</p>
+      <p>Es gibt <strong>keinen eigenen Server</strong>. Eine Cloud-Synchronisierung ist möglich,
+      aber rein optional, standardmäßig deaktiviert und muss von dir aktiv eingeschaltet werden
+      (siehe Abschnitt 3). Wenn du die App deinstallierst oder den Gerätespeicher leerst, sind
+      lokal gespeicherte Daten unwiderruflich gelöscht.</p>
     </div>
   </section>
 
+  <section id="cloud-sync">
+    <h2><span class="num">03</span> Optionale Cloud-Synchronisierung</h2>
+    <p>
+      PflegePro bietet eine <strong>rein optionale</strong> Cloud-Synchronisierung über den
+      Dienst Firebase (Google Ireland Limited). Diese Funktion ist standardmäßig deaktiviert
+      und wird ausschließlich aktiv, wenn du sie selbst im Profil-Bereich einschaltest.
+    </p>
+    <p>
+      Aktivierst du sie, wird dein Lernfortschritt (dieselben Daten wie in Abschnitt 2
+      beschrieben: Level, XP, Statistiken, Badges, Charakterwahl u.&nbsp;ä.) verschlüsselt über
+      HTTPS an eine Firestore-Datenbank von Google übertragen und in einer
+      Rechenzentrumsregion innerhalb der Europäischen Union gespeichert. So kannst du deinen
+      Fortschritt über einen von der App zufällig erzeugten Sync-Code selbst auf ein weiteres
+      Gerät übertragen.
+    </p>
+    <p>
+      Dabei werden keine Namen, E-Mail-Adressen oder anderen direkt identifizierenden Daten
+      übertragen — lediglich eine zufällig erzeugte, anonyme Kennung (Sync-Code) sowie die
+      genannten Fortschrittsdaten. Zur Absicherung nutzt die App zusätzlich eine anonyme
+      Firebase-Authentifizierung ohne personenbezogene Daten.
+    </p>
+    <p>
+      Du kannst die Cloud-Synchronisierung jederzeit im Profil-Bereich deaktivieren und deine
+      in der Cloud gespeicherten Daten dort mit einem Klick endgültig löschen. Für die
+      Verarbeitung durch Google/Firebase gelten ergänzend die
+      <a href="https://policies.google.com/privacy" target="_blank" rel="noopener">Datenschutzerklärung von Google</a>
+      und die
+      <a href="https://firebase.google.com/support/privacy" target="_blank" rel="noopener">Firebase-Datenschutzbestimmungen</a>.
+    </p>
+  </section>
+
   <section id="konto">
-    <h2><span class="num">03</span> Kein Konto, keine Registrierung</h2>
+    <h2><span class="num">04</span> Kein Konto, keine Registrierung</h2>
     <p>
       Für die Nutzung von PflegePro ist keine Registrierung, kein Login und keine
       E-Mail-Adresse erforderlich. Der beim Onboarding eingegebene Name ist ein frei
@@ -323,7 +356,7 @@
   </section>
 
   <section id="tracking">
-    <h2><span class="num">04</span> Keine Analyse- oder Tracking-Tools</h2>
+    <h2><span class="num">05</span> Keine Analyse- oder Tracking-Tools</h2>
     <p>
       PflegePro bindet keine Analyse-, Tracking- oder Absturzmelde-Dienste Dritter ein
       (z.&nbsp;B. Google Analytics, Firebase Analytics, Meta/Facebook SDK). Dein
@@ -332,7 +365,7 @@
   </section>
 
   <section id="werbung">
-    <h2><span class="num">05</span> Keine Werbung</h2>
+    <h2><span class="num">06</span> Keine Werbung</h2>
     <p>
       Die App zeigt keine Werbung und enthält keine Werbe-SDKs. Es findet keine
       personalisierte Werbung basierend auf deinem Verhalten statt.
@@ -340,13 +373,14 @@
   </section>
 
   <section id="berechtigungen">
-    <h2><span class="num">06</span> App-Berechtigungen</h2>
+    <h2><span class="num">07</span> App-Berechtigungen</h2>
     <p>PflegePro benötigt nur wenige, klar begründete Berechtigungen:</p>
     <div class="fact-row">
       <span class="fact-row__icon" aria-hidden="true">🌐</span>
-      <p><strong>Internetzugriff</strong> — wird ausschließlich verwendet, um externe Links
-      (z.&nbsp;B. zu unseren Social-Media-Profilen) im Browser deines Geräts zu öffnen.
-      Die App selbst sendet darüber keine Daten.</p>
+      <p><strong>Internetzugriff</strong> — wird verwendet, um externe Links (z.&nbsp;B. zu
+      unseren Social-Media-Profilen) im Browser deines Geräts zu öffnen, sowie – nur wenn du
+      die optionale Cloud-Synchronisierung im Profil-Bereich aktivierst – zur verschlüsselten
+      Übertragung deines Lernfortschritts an den Dienst Firebase (Google).</p>
     </div>
     <div class="fact-row">
       <span class="fact-row__icon" aria-hidden="true">💾</span>
@@ -358,7 +392,7 @@
   </section>
 
   <section id="kontrolle">
-    <h2><span class="num">07</span> Deine Kontrolle über deine Daten</h2>
+    <h2><span class="num">08</span> Deine Kontrolle über deine Daten</h2>
     <ul>
       <li><strong>Exportieren:</strong> Im Profil-Bereich kannst du deinen Fortschritt
       jederzeit als Datei sichern (z.&nbsp;B. für einen Gerätewechsel).</li>
@@ -366,11 +400,15 @@
       löschst du alle lokal gespeicherten Daten sofort und vollständig.</li>
       <li><strong>Deinstallieren:</strong> Das Löschen der App entfernt automatisch alle
       zugehörigen Daten von deinem Gerät.</li>
+      <li><strong>Cloud-Synchronisierung:</strong> Du entscheidest selbst, ob du die optionale
+      Cloud-Synchronisierung aktivierst. Sie ist standardmäßig ausgeschaltet, kann jederzeit im
+      Profil-Bereich wieder deaktiviert werden, und du kannst deine in der Cloud gespeicherten
+      Daten dort jederzeit endgültig löschen.</li>
     </ul>
   </section>
 
   <section id="play">
-    <h2><span class="num">08</span> Google Play Services</h2>
+    <h2><span class="num">09</span> Google Play Services</h2>
     <p>
       Der Bezug und die Installation der App über den Google Play Store unterliegen der
       Datenschutzerklärung von Google. Google kann dabei technische Daten (z.&nbsp;B. zur
@@ -381,7 +419,7 @@
   </section>
 
   <section id="minderjaehrige">
-    <h2><span class="num">09</span> Nutzung durch Auszubildende</h2>
+    <h2><span class="num">10</span> Nutzung durch Auszubildende</h2>
     <p>
       PflegePro richtet sich an Auszubildende und Interessierte der Pflegeberufe. Da keine
       personenbezogenen Daten erhoben oder übertragen werden, entstehen auch bei Nutzung
@@ -390,7 +428,7 @@
   </section>
 
   <section id="aenderungen">
-    <h2><span class="num">10</span> Änderungen dieser Erklärung</h2>
+    <h2><span class="num">11</span> Änderungen dieser Erklärung</h2>
     <p>
       Wird der Funktionsumfang von PflegePro erweitert (z.&nbsp;B. um ein optionales
       Käuferkonto für Premium-Inhalte), passen wir diese Erklärung entsprechend an und
@@ -399,7 +437,7 @@
   </section>
 
   <section id="kontakt">
-    <h2><span class="num">11</span> Kontakt</h2>
+    <h2><span class="num">12</span> Kontakt</h2>
     <p>
       Bei Fragen zum Datenschutz erreichst du uns unter
       <a href="mailto:simon.putschoegl@gmail.com">simon.putschoegl@gmail.com</a>.
