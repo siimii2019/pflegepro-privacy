@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poolrooms</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: system-ui, sans-serif; color: #e8fbff; user-select: none; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #hud { position: fixed; left: 16px; bottom: 16px; width: 220px; pointer-events: none; text-shadow: 0 1px 4px #000; }
+  #bar { height: 10px; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.5); border-radius: 6px; overflow: hidden; margin-top: 6px; }
+  #fill { height: 100%; width: 100%; background: #7fe3ff; transition: background .2s; }
+  #lvl { position: fixed; top: 14px; right: 18px; text-align: right; text-shadow: 0 1px 4px #000; pointer-events: none; }
+  #msg { position: fixed; top: 14%; left: 0; right: 0; text-align: center; font-size: 22px; font-weight: 700; color: #ff9a9a; text-shadow: 0 2px 8px #000; opacity: 0; transition: opacity .3s; pointer-events: none; }
+  #vig { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(120,0,0,0) 40%, rgba(150,0,0,.85) 100%); }
+  #ov { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; background: rgba(0,12,18,.82); padding: 24px; box-sizing: border-box; cursor: pointer; }
+  #ov h1 { margin: 0; font-size: clamp(34px, 7vw, 64px); letter-spacing: .08em; }
+  #ov p { margin: 0; max-width: 560px; line-height: 1.5; color: #b9dfe8; }
+  #ov .go { margin-top: 8px; font-weight: 700; color: #7fe3ff; }
+  #ov.hidden { display: none; }
+  #err { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; background: #000; }
+</style>
+</head>
+<body>
+<div id="vig"></div>
+<div id="hud">Ausdauer<div id="bar"><div id="fill"></div></div></div>
+<div id="lvl"></div>
+<div id="msg"></div>
+<div id="ov">
+  <h1>POOLROOMS</h1>
+  <p>Du bist in einem endlosen, leeren Schwimmbad aufgewacht. Das Licht summt. Etwas Großes schwimmt unter dir.<br>
+     Finde den grün leuchtenden <b>AUSGANG</b> an der Wand und komm lebend hin.</p>
+  <p><b>WASD</b> schwimmen · <b>Maus</b> umsehen · <b>Shift</b> sprinten (kostet Ausdauer, macht Lärm) · <b>Esc</b> Pause<br>
+     Säulen geben Deckung. Der Hai hört Sprinten weiter als Schwimmen.</p>
+  <div class="go" id="go">Klicken zum Starten</div>
+</div>
+<div id="err">WebGL wird von diesem Browser nicht unterstützt.</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+
+if (typeof THREE === 'undefined') {
+  $('err').style.display = 'flex';
+  $('err').textContent = 'Three.js konnte nicht geladen werden (Internetverbindung prüfen).';
+  return;
+}
+
+// ---------- Konstanten ----------
+const P = 45;                 // halbe Raumbreite
+const CEIL = 7, FLOOR = -3.2;
+const WALK = 3.6, SPRINT = 6.2;
+const EYE = 0.35;
+const PILLAR_R = 0.9;
+
+let best = 0;
+try { best = parseInt(localStorage.getItem('pr_best') || '0', 10) || 0; } catch (e) {}
+const saveBest = () => { try { localStorage.setItem('pr_best', String(best)); } catch (e) {} };
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// ---------- Renderer / Szene ----------
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+} catch (e) { $('err').style.display = 'flex'; return; }
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.prepend(renderer.domElement);
+const canvas = renderer.domElement;
+
+const FOG = 0xa8dde6;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(FOG);
+scene.fog = new THREE.FogExp2(FOG, 0.034);
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 200);
+camera.rotation.order = 'YXZ';
+addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+});
+
+// Fliesen-Textur aus Canvas
+function tileTex(base, grout, rx, ry) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = grout; g.fillRect(0, 0, 128, 128);
+  g.fillStyle = base; g.fillRect(3, 3, 122, 122);
+  for (let i = 0; i < 260; i++) {                       // feine Unreinheiten
+    g.fillStyle = 'rgba(0,0,0,' + rand(0.015, 0.05) + ')';
+    g.fillRect(rand(3, 124), rand(3, 124), rand(1, 3), rand(1, 3));
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry);
+  t.anisotropy = 4;
+  return t;
+}
+
+const roomH = CEIL - FLOOR, midY = (CEIL + FLOOR) / 2;
+const wallMat = new THREE.MeshLambertMaterial({ map: tileTex('#dff3f1', '#9fc4c6', P, roomH / 2), side: THREE.DoubleSide });
+const walls = [[0, -P, 0], [0, P, Math.PI], [-P, 0, Math.PI / 2], [P, 0, -Math.PI / 2]];
+for (const [x, z, ry] of walls) {
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(P * 2, roomH), wallMat);
+  m.position.set(x, midY, z); m.rotation.y = ry; scene.add(m);
+}
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(P * 2, P * 2),
+  new THREE.MeshLambertMaterial({ map: tileTex('#7fb7c4', '#4d8794', P, P) }));
+floor.rotation.x = -Math.PI / 2; floor.position.y = FLOOR; scene.add(floor);
+
+const ceil = new THREE.Mesh(new THREE.PlaneGeometry(P * 2, P * 2),
+  new THREE.MeshLambertMaterial({ map: tileTex('#f2f6f4', '#c5cfcd', P / 1.5, P / 1.5) }));
+ceil.rotation.x = Math.PI / 2; ceil.position.y = CEIL; scene.add(ceil);
+
+// Deckenlampen (gemeinsames Material -> alle flackern zusammen)
+const panelMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+for (let x = -40; x <= 40; x += 10) for (let z = -40; z <= 40; z += 10) {
+  const p = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.4), panelMat);
+  p.rotation.x = Math.PI / 2; p.position.set(x, CEIL - 0.03, z); scene.add(p);
+}
+const hemi = new THREE.HemisphereLight(0xffffff, 0x6fa9b8, 1.15);
+scene.add(hemi);
+
+// Wasseroberfläche mit wanderndem Wellenmuster
+const waveC = document.createElement('canvas'); waveC.width = waveC.height = 256;
+{
+  const g = waveC.getContext('2d');
+  g.fillStyle = '#58c3d6'; g.fillRect(0, 0, 256, 256);
+  g.strokeStyle = 'rgba(255,255,255,.28)'; g.lineWidth = 2;
+  for (let i = 0; i < 40; i++) {
+    const x = rand(0, 256), y = rand(0, 256), r = rand(10, 28);
+    g.beginPath(); g.arc(x, y, r, rand(0, 6), rand(0, 6) + 2); g.stroke();
+  }
+}
+const waveTex = new THREE.CanvasTexture(waveC);
+waveTex.wrapS = waveTex.wrapT = THREE.RepeatWrapping; waveTex.repeat.set(P / 3, P / 3);
+const water = new THREE.Mesh(new THREE.PlaneGeometry(P * 2, P * 2),
+  new THREE.MeshBasicMaterial({ map: waveTex, transparent: true, opacity: 0.5, depthWrite: false }));
+water.rotation.x = -Math.PI / 2; water.position.y = 0; scene.add(water);
+
+// Säulen
+const pillars = [];
+const pillarMat = new THREE.MeshLambertMaterial({ map: tileTex('#e6f4f2', '#a9c9ca', 4, roomH / 2) });
+for (let x = -35; x <= 35; x += 14) for (let z = -35; z <= 35; z += 14) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(PILLAR_R, PILLAR_R, roomH, 18), pillarMat);
+  m.position.set(x, midY, z); scene.add(m);
+  pillars.push({ x, z, r: PILLAR_R });
+}
+
+// Ausgang: Leiter + grünes Leuchtschild (fog:false -> immer sichtbar)
+const exitGroup = new THREE.Group(); scene.add(exitGroup);
+{
+  const steel = new THREE.MeshLambertMaterial({ color: 0xb8c4c8 });
+  for (const dx of [-0.35, 0.35]) {
+    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 3.2, 8), steel);
+    rail.position.set(dx, 0.2, 0); exitGroup.add(rail);
+  }
+  for (let i = 0; i < 6; i++) {
+    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 8), steel);
+    r.rotation.z = Math.PI / 2; r.position.set(0, -1.2 + i * 0.55, 0); exitGroup.add(r);
+  }
+  const c = document.createElement('canvas'); c.width = 512; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#0a3d1c'; g.fillRect(0, 0, 512, 128);
+  g.strokeStyle = '#7dffa6'; g.lineWidth = 6; g.strokeRect(6, 6, 500, 116);
+  g.fillStyle = '#9dffbc'; g.font = 'bold 74px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillText('AUSGANG', 256, 68);
+  const sign = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.5),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), fog: false }));
+  sign.position.set(0, 3.4, 0.05); exitGroup.add(sign);
+}
+const exitPos = { x: 0, z: 0 };
+
+// ---------- Hai ----------
+function makeShark() {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshLambertMaterial({ color: 0x4b5963 });
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), mat);
+  body.scale.set(0.9, 0.8, 2.7); g.add(body);
+  const belly = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshLambertMaterial({ color: 0xd9e3e8 }));
+  belly.scale.set(0.8, 0.5, 2.5); belly.position.y = -0.35; g.add(belly);
+  const tail = new THREE.Group(); tail.position.z = -2.6; g.add(tail);
+  const tc = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.8, 10), mat);
+  tc.rotation.x = -Math.PI / 2; tc.position.z = -0.8; tail.add(tc);
+  const tf = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.1, 4), mat);
+  tf.position.set(0, 0.2, -1.6); tail.add(tf);
+  const fin = new THREE.Mesh(new THREE.ConeGeometry(0.38, 1.5, 4), new THREE.MeshLambertMaterial({ color: 0x3a464f }));
+  fin.position.set(0, 0.95, 0.2); fin.rotation.x = -0.25; g.add(fin);
+  for (const dx of [-0.55, 0.55]) {
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), new THREE.MeshBasicMaterial({ color: 0x000000 }));
+    e.position.set(dx, 0.15, 2.0); g.add(e);
+  }
+  g.position.y = -0.9;
+  scene.add(g);
+  return { g, tail, x: 0, z: 0, ang: rand(0, 6.28), alert: 0, lastX: 0, lastZ: 0, wpX: 0, wpZ: 0, wpT: 0, phase: 0 };
+}
+
+// ---------- Spielzustand ----------
+const player = { x: 0, z: 0, yaw: 0, pitch: 0, stamina: 1, exhausted: false, regenDelay: 0, bob: 0, sprinting: false, moving: false };
+let sharks = [];
+let level = 1, state = 'menu';       // menu | play | paused | dead
+let msgT = 0, shake = 0, heartT = 0;
+
+function resolve(o, r) {
+  o.x = clamp(o.x, -P + r + 0.3, P - r - 0.3);
+  o.z = clamp(o.z, -P + r + 0.3, P - r - 0.3);
+  for (const p of pillars) {
+    const dx = o.x - p.x, dz = o.z - p.z, d = Math.hypot(dx, dz), min = p.r + r;
+    if (d < min) { const k = d > 0.001 ? min / d : 1; o.x = p.x + (d > 0.001 ? dx * k : min); o.z = p.z + (d > 0.001 ? dz * k : 0); }
+  }
+}
+function freeSpot(minFromX, minFromZ, minDist) {
+  for (let i = 0; i < 200; i++) {
+    const x = rand(-P + 4, P - 4), z = rand(-P + 4, P - 4);
+    if (pillars.some(p => Math.hypot(x - p.x, z - p.z) < 2.5)) continue;
+    if (Math.hypot(x - minFromX, z - minFromZ) < minDist) continue;
+    return { x, z };
+  }
+  return { x: 0, z: 0 };
+}
+
+function setupLevel() {
+  // Ausgang an einer zufälligen Wand
+  const side = Math.floor(rand(0, 4)), t = rand(-P + 8, P - 8);
+  const e = [[t, -P + 0.4, 0], [t, P - 0.4, Math.PI], [-P + 0.4, t, Math.PI / 2], [P - 0.4, t, -Math.PI / 2]][side];
+  exitGroup.position.set(e[0], 0, e[1]); exitGroup.rotation.y = e[2];
+  exitPos.x = e[0]; exitPos.z = e[1];
+
+  const s = freeSpot(exitPos.x, exitPos.z, 55);
+  player.x = s.x; player.z = s.z; player.stamina = 1; player.exhausted = false;
+  player.yaw = Math.atan2(-(exitPos.x - s.x), -(exitPos.z - s.z));
+  player.pitch = 0;
+
+  for (const sh of sharks) scene.remove(sh.g);
+  sharks = [];
+  const n = Math.min(1 + Math.floor((level - 1) / 2), 4);
+  for (let i = 0; i < n; i++) {
+    const sh = makeShark();
+    const p = freeSpot(player.x, player.z, 28);
+    sh.x = p.x; sh.z = p.z; sh.wpT = 0; sharks.push(sh);
+  }
+}
+
+// ---------- Eingabe ----------
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
+  if (e.code === 'KeyR' && state === 'dead') restart();
+});
+addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement !== canvas || state !== 'play') return;
+  player.yaw -= e.movementX * 0.0022;
+  player.pitch = clamp(player.pitch - e.movementY * 0.0022, -1.3, 1.3);
+});
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement !== canvas && state === 'play') pause();
+});
+
+function begin() {
+  initAudio();
+  if (state === 'dead') { restart(); return; }
+  state = 'play'; $('ov').classList.add('hidden');
+  try { canvas.requestPointerLock(); } catch (e) {}
+}
+function pause() {
+  if (state !== 'play') return;
+  state = 'paused';
+  $('ov').classList.remove('hidden'); $('go').textContent = 'Pausiert – klicken zum Weiterspielen';
+}
+$('ov').addEventListener('click', () => {
+  if (state === 'menu' || state === 'paused' || state === 'dead') begin();
+});
+
+function restart() {
+  level = 1; setupLevel();
+  state = 'play'; $('ov').classList.add('hidden'); $('vig').style.opacity = 0; shake = 0;
+  try { canvas.requestPointerLock(); } catch (e) {}
+}
+
+// ---------- Audio (alles per WebAudio erzeugt, keine Dateien) ----------
+let AC = null, master = null;
+function initAudio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  try {
+    AC = new (window.AudioContext || window.webkitAudioContext)();
+    master = AC.createGain(); master.gain.value = 0.7; master.connect(AC.destination);
+    // Neonlicht-Brummen
+    const hum = AC.createGain(); hum.gain.value = 0.05; hum.connect(master);
+    for (const f of [60, 120.5, 181]) {
+      const o = AC.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+      const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 400;
+      o.connect(lp); lp.connect(hum); o.start();
+    }
+    // Wasserrauschen
+    const buf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate), d = buf.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    const n = AC.createBufferSource(); n.buffer = buf; n.loop = true;
+    const nf = AC.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 500;
+    const ng = AC.createGain(); ng.gain.value = 0.09;
+    n.connect(nf); nf.connect(ng); ng.connect(master); n.start();
+  } catch (e) { AC = null; }
+}
+function thump(freq, vol, len) {
+  if (!AC) return;
+  const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
+  o.type = 'sine'; o.frequency.setValueAtTime(freq, t); o.frequency.exponentialRampToValueAtTime(freq * 0.5, t + len);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + len);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + len + 0.05);
+}
+function stinger() {
+  if (!AC) return;
+  for (const f of [220, 233, 311]) {
+    const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
+    o.type = 'sawtooth'; o.frequency.value = f;
+    g.gain.setValueAtTime(0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 1.5);
+  }
+}
+
+// ---------- Hai-KI ----------
+function turnToward(cur, target, maxStep) {
+  let d = target - cur;
+  while (d > Math.PI) d -= 6.2832;
+  while (d < -Math.PI) d += 6.2832;
+  return cur + clamp(d, -maxStep, maxStep);
+}
+
+function updateShark(s, dt) {
+  const dx = player.x - s.x, dz = player.z - s.z, dist = Math.hypot(dx, dz);
+  const sight = player.sprinting ? 30 : (player.moving ? 15 : 9);
+  const wasHunting = s.alert > 0;
+  if (dist < sight || dist < 6) { s.alert = 6; s.lastX = player.x; s.lastZ = player.z; }
+  else s.alert = Math.max(0, s.alert - dt);
+  if (!wasHunting && s.alert > 0) { showMsg('Der Hai hat dich bemerkt!'); thump(70, 0.5, 0.5); }
+
+  let tx, tz, speed, turn;
+  if (s.alert > 0) {
+    tx = s.lastX; tz = s.lastZ;
+    speed = Math.min(4.8 + level * 0.35, 6.0); turn = 2.6;
+  } else {
+    s.wpT -= dt;
+    if (s.wpT <= 0 || Math.hypot(s.wpX - s.x, s.wpZ - s.z) < 3) {
+      const p = freeSpot(s.x, s.z, 10); s.wpX = p.x; s.wpZ = p.z; s.wpT = 9;
+    }
+    tx = s.wpX; tz = s.wpZ; speed = 2.6; turn = 1.2;
+  }
+  s.ang = turnToward(s.ang, Math.atan2(tx - s.x, tz - s.z), turn * dt);
+  s.x += Math.sin(s.ang) * speed * dt;
+  s.z += Math.cos(s.ang) * speed * dt;
+  resolve(s, 1.4);
+  s.phase += dt * (3 + speed);
+  s.g.position.x = s.x; s.g.position.z = s.z;
+  s.g.rotation.y = s.ang;
+  s.tail.rotation.y = Math.sin(s.phase) * 0.45;
+  s.g.position.y = -0.9 + Math.sin(s.phase * 0.5) * 0.04;
+  return dist;
+}
+
+// ---------- Hilfsfunktionen UI ----------
+function showMsg(text) { $('msg').textContent = text; $('msg').style.opacity = 1; msgT = 2.2; }
+
+function die() {
+  state = 'dead'; shake = 1; stinger();
+  if (document.pointerLockElement) document.exitPointerLock();
+  const done = level - 1;
+  if (done > best) { best = done; saveBest(); }
+  $('ov').classList.remove('hidden');
+  $('ov').innerHTML = '<h1 style="color:#ff7a7a">GEFRESSEN</h1><p>Ausgänge erreicht: <b>' + done + '</b> · Rekord: <b>' + best + '</b></p><div class="go">Klicken oder R für einen neuen Versuch</div>';
+}
+
+// ---------- Update ----------
+function update(dt, time) {
+  // Lichtflackern & Wellen laufen immer
+  waveTex.offset.x = time * 0.01; waveTex.offset.y = time * 0.006;
+  const flick = Math.random() < 0.012 ? rand(0.55, 0.85) : 1;
+  panelMat.color.setScalar(flick); hemi.intensity = 1.15 * (0.85 + 0.15 * flick);
+
+  if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').style.opacity = 0; }
+  if (state === 'dead') {
+    shake = Math.max(0, shake - dt * 0.6);
+    camera.position.set(player.x + rand(-1, 1) * shake * 0.1, EYE, player.z + rand(-1, 1) * shake * 0.1);
+    return;
+  }
+  if (state !== 'play') return;
+
+  // Spieler
+  let mx = 0, mz = 0;
+  if (keys.KeyW || keys.ArrowUp) mz -= 1;
+  if (keys.KeyS || keys.ArrowDown) mz += 1;
+  if (keys.KeyA || keys.ArrowLeft) mx -= 1;
+  if (keys.KeyD || keys.ArrowRight) mx += 1;
+  const l = Math.hypot(mx, mz);
+  player.moving = l > 0;
+  const wantSprint = player.moving && (keys.ShiftLeft || keys.ShiftRight) && !player.exhausted && player.stamina > 0;
+  player.sprinting = wantSprint;
+  if (wantSprint) { player.stamina -= dt / 5; player.regenDelay = 1.2; if (player.stamina <= 0) { player.stamina = 0; player.exhausted = true; } }
+  else { player.regenDelay -= dt; if (player.regenDelay <= 0) player.stamina = Math.min(1, player.stamina + dt / 8); }
+  if (player.exhausted && player.stamina > 0.3) player.exhausted = false;
+  if (l) {
+    const sp = (wantSprint ? SPRINT : WALK) * (player.exhausted ? 0.75 : 1);
+    const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
+    player.x += ((mx * cos + mz * sin) / l) * sp * dt;
+    player.z += ((-mx * sin + mz * cos) / l) * sp * dt;
+    player.bob += dt * (wantSprint ? 9 : 5);
+    resolve(player, 0.5);
+  }
+
+  // Haie
+  let nearest = 999;
+  for (const s of sharks) {
+    const d = updateShark(s, dt);
+    nearest = Math.min(nearest, d);
+    if (d < 2.3) { die(); return; }
+  }
+
+  // Herzschlag + Rand-Rötung je näher der Hai
+  const danger = clamp(1 - (nearest - 3) / 22, 0, 1);
+  $('vig').style.opacity = (danger * danger * 0.95).toFixed(2);
+  heartT -= dt;
+  if (heartT <= 0 && danger > 0.05) {
+    thump(55, 0.35 + danger * 0.4, 0.18); setTimeout(() => thump(48, 0.25 + danger * 0.3, 0.16), 160);
+    heartT = 1.15 - danger * 0.75;
+  }
+
+  // Ausgang
+  if (Math.hypot(player.x - exitPos.x, player.z - exitPos.z) < 2.6) {
+    level++; if (level - 1 > best) { best = level - 1; saveBest(); }
+    showMsg('Ausgang erreicht – Ebene ' + level); thump(120, 0.4, 0.6);
+    setupLevel();
+  }
+
+  // Kamera
+  camera.position.set(player.x, EYE + Math.sin(player.bob) * 0.05, player.z);
+  camera.rotation.set(player.pitch, player.yaw, 0);
+
+  // HUD
+  $('fill').style.width = (player.stamina * 100).toFixed(0) + '%';
+  $('fill').style.background = player.exhausted ? '#ff8a6a' : '#7fe3ff';
+}
+
+function updateHud() {
+  $('lvl').innerHTML = 'Ebene <b>' + level + '</b><br><small>Rekord ' + best + '</small>';
+}
+
+// ---------- Loop ----------
+setupLevel();
+camera.position.set(player.x, EYE, player.z); camera.rotation.set(0, player.yaw, 0);
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  update(dt, now / 1000);
+  updateHud();
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// Test-Schnittstelle (nur lesen / Helfer)
+window.__g = {
+  get state() { return state; }, get level() { return level; },
+  player, sharks: () => sharks.map(s => ({ x: s.x, z: s.z, alert: s.alert })),
+  exit: exitPos, start: begin, teleport(x, z) { player.x = x; player.z = z; }
+};
+})();
+</script>
+</body>
+</html>
