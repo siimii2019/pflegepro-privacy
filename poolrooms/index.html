@@ -82,29 +82,35 @@ document.body.prepend(renderer.domElement);
 const canvas = renderer.domElement;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x07141a);
-scene.fog = new THREE.FogExp2(0x07141a, 0.04);
+scene.background = new THREE.Color(0x02080b);
+scene.fog = new THREE.FogExp2(0x02080b, 0.03);
 const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 200);
 camera.rotation.order = 'YXZ';
 addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
 });
-const hemi = new THREE.HemisphereLight(0x6f8fb0, 0x101820, 0.5);
+const hemi = new THREE.HemisphereLight(0x6f8fb0, 0x101820, 0.12);
 scene.add(hemi);
-let hemiBase = 0.5;
+let hemiBase = 0.12;
 // Taschenlampe (F)
 scene.add(camera);
-const FLASH = 2.4;
-const flash = new THREE.SpotLight(0xfff0d0, FLASH, 34, 0.5, 0.55, 1.1);
+const FLASH = 3.0;
+const flash = new THREE.SpotLight(0xd8e6ff, FLASH, 40, 0.4, 0.7, 1.1);
 flash.position.set(0.15, -0.1, 0); camera.add(flash);
 const flashT = new THREE.Object3D(); flashT.position.set(0, 0, -1); camera.add(flashT); flash.target = flashT;
 let flashOn = true;
 // Wenige, schwache Neonlichter in den Räumen (flackern mit den Deckenlampen)
 const indoorLights = [];
-[[0, 5.4, -12, 20], [0, 5.4, 12, 20], [-22, 3.0, -6, 16], [22, 3.0, 6, 16], [-27, 3.0, 28, 14], [0, 3.0, 28, 16]].forEach(([x, y, z, d]) => {
-  const l = new THREE.PointLight(0xbfe6ee, 0.8, d, 2); l.position.set(x, DECK + y, z); scene.add(l); indoorLights.push(l);
-});
+const addL = (x, y, z, color, I, d) => { const l = new THREE.PointLight(color, I, d, 2); l.position.set(x, y, z); l.userData.base = I; scene.add(l); indoorLights.push(l); };
+// Halle: drei Hängelampen + türkises Unterwasserlicht (Hauptlichtquelle wie im Vorbild)
+[-15, 0, 15].forEach(z => addL(0, DECK + 5.0, z, 0xfff2e0, 1.1, 15));
+[-12, 0, 12].forEach(z => addL(0, -1.6, z, 0x20d6c4, 2.4, 14));
+// Räume: je eine neutrale Leuchtstofflampe -> helle Lichtinsel, dunkle Ecken
+addL(-22, DECK + 3.0, -6, 0xfff1d8, 3.4, 20);
+addL(22, DECK + 3.0, 6, 0xfff1d8, 3.4, 20);
+addL(-27, DECK + 3.0, 28, 0xe6f4ff, 3.2, 18);
+addL(0, DECK + 3.0, 28, 0xfff1d8, 3.4, 22);
 
 // ================= Texturen & Helfer =================
 function tileTex(base, grout, size = 128) {
@@ -125,13 +131,14 @@ function theme(wallBase, wallGrout, floorBase, floorGrout) {
   return { wall: lamb(tileTex(wallBase, wallGrout)), floor: lamb(tileTex(floorBase, floorGrout)) };
 }
 const T = {
-  hall:  theme('#dff3f1', '#9fc4c6', '#7fb7c4', '#4d8794'),
-  a:     theme('#ecdcb4', '#b79f6c', '#c9b27a', '#8e7a4c'),
-  b:     theme('#d3e3cc', '#93ad8d', '#a9c19e', '#6e8b66'),
-  shower:theme('#e3f2f8', '#9dbfcc', '#9ec8d8', '#5f8ea0'),
-  flur:  theme('#e2dfa6', '#aaa56a', '#c4c07c', '#8d8950'),
+  hall:  theme('#9aa8a8', '#5d6b6c', '#6f8588', '#3f4f52'),
+  a:     theme('#d8d6cf', '#a9a79f', '#c8a063', '#9a7a45'),
+  b:     theme('#d5d7d0', '#a5a79f', '#c49a5c', '#977a44'),
+  shower:theme('#5f8a8c', '#3d5c5e', '#2a3033', '#171b1d'),
+  flur:  theme('#cfcbbb', '#9c9885', '#b28d55', '#826438'),
 };
 const ceilMat = lamb(tileTex('#f2f6f2', '#c3ccc8'));
+const darkCeil = lamb(tileTex('#222629', '#15191b'));
 const grayMat = new THREE.MeshLambertMaterial({ color: 0x8e9aa0 });
 const woodMat = new THREE.MeshLambertMaterial({ color: 0xb98f5a });
 const panelMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -196,8 +203,7 @@ flat(-HX, -HZ, -BASIN.x, HZ, DECK, T.hall.floor, true);
 flat(BASIN.x, -HZ, HX, HZ, DECK, T.hall.floor, true);
 flat(-BASIN.x, -HZ, BASIN.x, -BASIN.z, DECK, T.hall.floor, true);
 flat(-BASIN.x, BASIN.z, BASIN.x, HZ, DECK, T.hall.floor, true);
-flat(-HX, -HZ, HX, HZ, DECK + HALL_H, ceilMat, false, 1.5);
-panels(-HX, -HZ, HX, HZ, DECK + HALL_H, 6);
+flat(-HX, -HZ, HX, HZ, DECK + HALL_H, darkCeil, false, 1.5);
 
 // Becken: Boden, Seitenwände, Wasser
 flat(-BASIN.x, -BASIN.z, BASIN.x, BASIN.z, BASIN.floor, T.hall.floor, true);
@@ -223,7 +229,7 @@ const waveC = document.createElement('canvas'); waveC.width = waveC.height = 256
 const waveTex = new THREE.CanvasTexture(waveC);
 waveTex.wrapS = waveTex.wrapT = THREE.RepeatWrapping; waveTex.repeat.set(BASIN.x * 2 / 3, BASIN.z * 2 / 3);
 const water = new THREE.Mesh(new THREE.PlaneGeometry(BASIN.x * 2, BASIN.z * 2),
-  new THREE.MeshBasicMaterial({ map: waveTex, color: 0x4a6a74, transparent: true, opacity: 0.55, depthWrite: false }));
+  new THREE.MeshBasicMaterial({ map: waveTex, color: 0x1fc8b6, transparent: true, opacity: 0.62, depthWrite: false }));
 water.rotation.x = -Math.PI / 2; scene.add(water);
 
 // Bahnenseile
@@ -321,18 +327,18 @@ function cabins(x0, z0, dirZ, count, step, curtainColor) {
 function lockerBox(x1, z1, x2, z2, face, color) { lockers(x1, z1, x2, z2, face, color); }
 
 // A
-lockerBox(-29.85, -13.7, -29.3, 1.7, 0, '#2f7f8f');
-lockerBox(-29.2, -13.85, -14.5, -13.3, 4, '#2f7f8f');
+lockerBox(-29.85, -13.7, -29.3, 1.7, 0, '#2d63a8');
+lockerBox(-29.2, -13.85, -14.5, -13.3, 4, '#2d63a8');
 bench(-22, -10, 4, true); bench(-22, -0.5, 4, true);
-cabins(-28, 2, -1, 7, 1.6, 0xa33a4a);
+cabins(-28, 2, -1, 7, 1.6, 0x6a4a2e);
 // B
-lockerBox(29.3, -1.7, 29.85, 13.7, 1, '#7a5fa0');
-lockerBox(15.0, 13.3, 28.8, 13.85, 5, '#7a5fa0');
+lockerBox(29.3, -1.7, 29.85, 13.7, 1, '#2d63a8');
+lockerBox(15.0, 13.3, 28.8, 13.85, 5, '#2d63a8');
 bench(22, 3, 4, true); bench(22, 9, 4, true);
-cabins(17, -2, 1, 7, 1.6, 0x3a7aa3);
+cabins(17, -2, 1, 7, 1.6, 0x6a4a2e);
 // Duschen: Kabinen mit Duschköpfen
 {
-  const sm = new THREE.MeshLambertMaterial({ map: T.shower.wall.map });
+  const sm = new THREE.MeshLambertMaterial({ color: 0x6b4a2f });
   for (let k = 0; k <= 9; k++) {
     const x = -33 + k * 1.4;
     box(x - 0.04, 22.15, x + 0.04, 23.8, DECK, 2.2, sm, true);
@@ -352,8 +358,8 @@ cabins(17, -2, 1, 7, 1.6, 0x3a7aa3);
 {
   const c = document.createElement('canvas'); c.width = 64; c.height = 128;
   const g = c.getContext('2d');
-  g.fillStyle = '#2b2f33'; g.fillRect(0, 0, 64, 128);
-  g.fillStyle = '#ffd37a'; g.fillRect(6, 8, 52, 84);
+  g.fillStyle = '#157a99'; g.fillRect(0, 0, 64, 128);
+  g.fillStyle = '#9fecff'; g.fillRect(6, 8, 52, 84);
   const cl = ['#ff7a3a', '#6ad0ff', '#9aff8a', '#ff7a3a'];
   for (let r = 0; r < 4; r++) for (let q = 0; q < 3; q++) { g.fillStyle = cl[(r + q) % 4]; g.fillRect(10 + q * 16, 14 + r * 20, 10, 14); }
   g.fillStyle = '#111'; g.fillRect(10, 98, 44, 18);
@@ -378,6 +384,39 @@ for (const x of [-5, -3, -1, 1, 3, 5]) box(x - 0.35, 18.4, x + 0.35, 19.1, DECK,
   addCol(cx - 0.6, cz - 0.6, cx + 0.6, cz + 0.6);
 }
 
+// ---- Halle: Dachträger, Hängelampen, Tribüne, Stühle, Beckenlinien; Kürbis & Zeitung ----
+{
+  const steel = new THREE.MeshLambertMaterial({ color: 0x1b2024 });
+  for (let z = -22; z <= 22; z += 4.4) box(-HX, z - 0.2, HX, z + 0.2, DECK + HALL_H - 0.7, 0.5, steel, false);
+  const bulbMat = new THREE.MeshBasicMaterial({ color: 0xfff4dc });
+  for (const x of [-4.5, 4.5]) for (const z of [-17, -9, -1, 7, 15]) {
+    const cone = new THREE.Mesh(new THREE.ConeGeometry(0.38, 0.3, 12, 1, true), new THREE.MeshLambertMaterial({ color: 0x1b2024, side: THREE.DoubleSide }));
+    cone.position.set(x, DECK + HALL_H - 1.05, z); scene.add(cone);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), bulbMat); bulb.position.set(x, DECK + HALL_H - 1.2, z); scene.add(bulb);
+  }
+  const bl = new THREE.MeshLambertMaterial({ color: 0xc9ccce });
+  for (let i = 0; i < 4; i++) box(-HX + 0.15, 6, -HX + 0.15 + (4 - i) * 0.7, 16, DECK, 0.35 * (i + 1), bl, true);
+  const blue = new THREE.MeshLambertMaterial({ color: 0x2a55a8 });
+  for (let x = -10; x <= 10; x += 2.5) { box(x - 0.22, -23.8, x + 0.22, -23.35, DECK, 0.45, blue, false); box(x - 0.22, -23.85, x + 0.22, -23.75, DECK + 0.45, 0.4, blue, false); }
+  const blk = new THREE.MeshLambertMaterial({ color: 0x06080a });
+  for (const x of [-4.67, -2.33, 0, 2.33, 4.67]) {
+    box(x - 0.12, -17.3, x + 0.12, 17.3, BASIN.floor, 0.02, blk, false);
+    for (const z of [-16.9, 16.9]) box(x - 0.6, z - 0.12, x + 0.6, z + 0.12, BASIN.floor, 0.02, blk, false);
+  }
+  // Kürbis auf dem Empfangstresen
+  const pm = new THREE.MeshLambertMaterial({ color: 0xd9741a, flatShading: true });
+  const pk = new THREE.Mesh(new THREE.SphereGeometry(0.26, 12, 9), pm); pk.scale.y = 0.8; pk.position.set(-10, DECK + 1.2, 28); scene.add(pk);
+  const st = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.12, 6), new THREE.MeshLambertMaterial({ color: 0x4a5a22 })); st.position.set(-10, DECK + 1.46, 28); scene.add(st);
+  // Zeitungsausschnitt an der Flurwand (eigener Text)
+  const c = document.createElement('canvas'); c.width = 256; c.height = 192;
+  const g = c.getContext('2d'); g.fillStyle = '#d8d0b8'; g.fillRect(0, 0, 256, 192);
+  g.fillStyle = '#222'; g.font = 'bold 22px serif'; g.textAlign = 'center'; g.fillText('STADTBOTE', 128, 28);
+  g.fillRect(10, 36, 236, 2); g.font = 'bold 17px serif';
+  ['ALTE GRUNDSCHULE', 'WIRD ZUM', 'SCHWIMMZENTRUM'].forEach((t, i) => g.fillText(t, 128, 62 + i * 21));
+  g.fillStyle = '#555'; for (let i = 0; i < 6; i++) g.fillRect(14, 132 + i * 8, 228 - (i % 3) * 30, 3);
+  const np = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.675), new THREE.MeshLambertMaterial({ map: new THREE.CanvasTexture(c) }));
+  np.position.set(-14, DECK + 1.6, 24.2); scene.add(np);
+}
 // ---- Ausgänge ----
 function signTex(text, bg, fg) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 64;
@@ -479,14 +518,15 @@ const asphaltMat = (() => {
   });
 
   // Herbstbäume
-  const leaf = [0xc0561e, 0xd9892b, 0xb83a22, 0xcfae3a, 0x9a5a28];
-  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x4f3a2a });
+  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x15110e });
   [[-40, -10], [-45, 12], [-42, 40], [-30, 46], [-15, 42], [0, 46], [10, 50], [-55, 26], [-50, -32], [-20, -36],
    [10, -36], [35, -32], [50, -12], [60, 4], [65, 36], [40, 62], [-5, 60]].forEach(([x, z]) => {
     const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 3.2, 8), trunkMat); tr.position.set(x, DECK + 1.6, z); scene.add(tr);
-    for (let k = 0; k < 4; k++) {
-      const b = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(1.1, 1.7), 1), new THREE.MeshLambertMaterial({ color: leaf[Math.floor(Math.random() * leaf.length)], flatShading: true }));
-      b.position.set(x + rand(-0.9, 0.9), DECK + rand(3.4, 4.6), z + rand(-0.9, 0.9)); scene.add(b);
+    for (let k = 0; k < 8; k++) {
+      const L = rand(1.8, 3.4);
+      const br = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.07, L, 5), trunkMat);
+      br.position.set(x + rand(-0.6, 0.6), DECK + rand(2.6, 4.8), z + rand(-0.6, 0.6));
+      br.rotation.set(rand(-1, 1), rand(0, 6.28), rand(-1, 1)); scene.add(br);
     }
     addCol(x - 0.35, z - 0.35, x + 0.35, z + 0.35);
   });
@@ -495,13 +535,14 @@ const asphaltMat = (() => {
 const sky = (() => {
   const c = document.createElement('canvas'); c.width = 2048; c.height = 1024;
   const g = c.getContext('2d'); g.scale(4, 4); const gr = g.createLinearGradient(0, 0, 0, 256);
-  gr.addColorStop(0, '#02040a'); gr.addColorStop(0.45, '#0b1328'); gr.addColorStop(0.5, '#1a2540');
-  gr.addColorStop(0.56, '#05070c'); gr.addColorStop(1, '#010103');
+  gr.addColorStop(0, '#010207'); gr.addColorStop(0.45, '#04070f'); gr.addColorStop(0.5, '#0a1020');
+  gr.addColorStop(0.56, '#030409'); gr.addColorStop(1, '#010102');
   g.fillStyle = gr; g.fillRect(0, 0, 512, 256);
   for (let i = 0; i < 700; i++) { g.fillStyle = 'rgba(255,255,255,' + rand(0.25, 0.9) + ')'; const q = rand(0.3, 0.7); g.fillRect(rand(0, 512), rand(0, 118), q, q); }
-  const gl = g.createRadialGradient(380, 62, 2, 380, 62, 42); gl.addColorStop(0, 'rgba(210,225,255,.9)'); gl.addColorStop(0.25, 'rgba(160,185,235,.25)'); gl.addColorStop(1, 'rgba(120,150,220,0)');
-  g.fillStyle = gl; g.fillRect(330, 12, 100, 100);
-  g.fillStyle = '#e8efff'; g.beginPath(); g.arc(380, 62, 9, 0, 6.2832); g.fill();
+  const gl = g.createRadialGradient(380, 88, 6, 380, 88, 95); gl.addColorStop(0, 'rgba(210,225,255,.55)'); gl.addColorStop(0.3, 'rgba(150,175,230,.16)'); gl.addColorStop(1, 'rgba(120,150,220,0)');
+  g.fillStyle = gl; g.fillRect(270, -10, 220, 200);
+  g.fillStyle = '#e4ebf5'; g.beginPath(); g.arc(380, 88, 22, 0, 6.2832); g.fill();
+  g.fillStyle = 'rgba(120,130,150,.28)'; for (let i = 0; i < 22; i++) { g.beginPath(); g.arc(380 + rand(-16, 16), 88 + rand(-16, 16), rand(0.8, 2.6), 0, 6.2832); g.fill(); }
   const m = new THREE.Mesh(new THREE.SphereGeometry(150, 16, 12),
     new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), side: THREE.BackSide, fog: false, depthWrite: false }));
   m.renderOrder = -1; scene.add(m); return m;
@@ -696,12 +737,12 @@ function zoneAt(x, z) {
   return 'out';
 }
 const ZONES = {
-  hall:   { c: new THREE.Color(0x07141a), d: 0.045 },
-  a:      { c: new THREE.Color(0x120e08), d: 0.075 },
-  b:      { c: new THREE.Color(0x09120d), d: 0.075 },
-  shower: { c: new THREE.Color(0x08141a), d: 0.075 },
-  flur:   { c: new THREE.Color(0x13120a), d: 0.07 },
-  out:    { c: new THREE.Color(0x090d18), d: 0.022 },
+  hall:   { c: new THREE.Color(0x02080b), d: 0.03 },
+  a:      { c: new THREE.Color(0x0e0b07), d: 0.045 },
+  b:      { c: new THREE.Color(0x0e0b07), d: 0.045 },
+  shower: { c: new THREE.Color(0x060e11), d: 0.045 },
+  flur:   { c: new THREE.Color(0x0e0c07), d: 0.045 },
+  out:    { c: new THREE.Color(0x03050a), d: 0.02 },
 };
 
 function teleportToPool() {
@@ -732,8 +773,8 @@ function update(dt, time) {
   // Lichtflackern, gelegentlich Stromausfall
   dimT = Math.max(0, dimT - dt);
   const flick = dimT > 0 ? 0.08 : (Math.random() < 0.02 ? rand(0.3, 0.8) : 1);
-  panelMat.color.setScalar(flick * 0.75); hemi.intensity = hemiBase * (dimT > 0 ? 0.1 : (0.85 + 0.15 * flick));
-  for (const l of indoorLights) l.intensity = dimT > 0 ? 0 : 0.8 * flick;
+  panelMat.color.setScalar(flick * 0.95); hemi.intensity = hemiBase * (dimT > 0 ? 0.1 : (0.85 + 0.15 * flick));
+  for (const l of indoorLights) l.intensity = dimT > 0 ? 0 : l.userData.base * flick;
   flash.visible = flashOn;
 
   if (state !== 'play') { applyCamera(); return; }
@@ -807,7 +848,7 @@ function update(dt, time) {
 
   // Atmosphäre: Nebel je Zone, Herzschlag, Zufallsereignisse
   const zn = ZONES[z];
-  hemiBase += ((z === 'out' ? 0.8 : 0.45) - hemiBase) * Math.min(1, dt * 2);
+  hemiBase += ((z === 'out' ? 0.5 : (z === 'hall' ? 0.1 : 0.3)) - hemiBase) * Math.min(1, dt * 2);
   scene.fog.color.lerp(zn.c, Math.min(1, dt * 1.5)); scene.background.copy(scene.fog.color);
   scene.fog.density += (zn.d - scene.fog.density) * Math.min(1, dt * 1.5);
   if (humG) { const k = Math.min(1, dt * 2); humG.gain.value += ((z === 'out' ? 0.006 : 0.05) - humG.gain.value) * k; nsG.gain.value += ((z === 'out' ? 0.03 : 0.08) - nsG.gain.value) * k; }
