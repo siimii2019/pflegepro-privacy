@@ -37,7 +37,7 @@
 <div id="ov">
   <h1 id="ovT">POOLROOMS</h1>
   <p id="ovP">Ein Herbstnachmittag im Schwimmzentrum. Du bist allein. Die Lampen summen, und jede Tür führt zurück ins Wasser.<br>
-     Schwimm <b>zehn Bahnen</b>, dann ist der Ausgang offen. Im Becken ist etwas Großes.</p>
+     Schwimm <b>zehn Bahnen</b>, dann ist der Ausgang offen. Im Becken ist etwas Großes. Draußen kannst du danach frei herumlaufen.</p>
   <p id="ovH"><b>WASD</b> bewegen · <b>Maus</b> umsehen · <b>Shift</b> sprinten (im Wasser teuer und laut) · <b>Esc</b> Pause<br>
      Schwimmen kostet Ausdauer. Such <b>orange Getränke</b> in Umkleiden, Duschen und Flur. An Land erholst du dich langsam.</p>
   <div class="go" id="go">Klicken zum Starten</div>
@@ -70,6 +70,7 @@ const saveBest = () => { try { localStorage.setItem('pr_best', String(best)); } 
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const fmt = t => Math.floor(t / 60) + ':' + String(Math.floor(t % 60)).padStart(2, '0');
 
 // ================= Renderer / Szene =================
 let renderer;
@@ -254,7 +255,8 @@ room(14, -2, 30, 14, ROOM_H, T.b);
 wall(30, -2, 30, 14, ROOM_H, T.b); wall(14, -2, 30, -2, ROOM_H, T.b); wall(14, 14, 30, 14, ROOM_H, T.b);
 // Flur (x -20..20, z 24..32)
 room(-20, 24, 20, 32, ROOM_H, T.flur, 6);
-wall(20, 24, 20, 32, ROOM_H, T.flur); wall(-20, 32, 20, 32, ROOM_H, T.flur);
+wall(20, 24, 20, 26, ROOM_H, T.flur); wall(20, 30, 20, 32, ROOM_H, T.flur); wall(-20, 32, 20, 32, ROOM_H, T.flur);
+box(19.85, 26, 20.15, 30, DECK + 2.3, ROOM_H - 2.3, T.flur.wall, false);   // Sturz über der Tür
 // Duschen (x -34..-20, z 22..34), Tür zum Flur bei z 26..29
 room(-34, 22, -20, 34, ROOM_H, T.shower);
 wall(-20, 22, -20, 26, ROOM_H, T.shower); wall(-20, 29, -20, 34, ROOM_H, T.shower);
@@ -376,12 +378,24 @@ function exitDoor(x, z1, z2, facing) {
   const door = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.3, z2 - z1), dm);
   door.position.set(x, DECK + 1.15, (z1 + z2) / 2); scene.add(door);
   const sm = new THREE.MeshBasicMaterial({ map: redSign, fog: false });
-  const s = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), sm);
-  s.position.set(x + facing * 0.08, DECK + 2.65, (z1 + z2) / 2); s.rotation.y = facing > 0 ? Math.PI / 2 : -Math.PI / 2; scene.add(s);
-  return sm;
+  const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), sm);
+  sg.position.set(x + facing * 0.08, DECK + 2.65, (z1 + z2) / 2); sg.rotation.y = facing > 0 ? Math.PI / 2 : -Math.PI / 2; scene.add(sg);
+  return { sm, door };
 }
-const realExitSign = exitDoor(19.78, 26, 30, -1);       // Flur, Ostseite
+const realExit = exitDoor(19.78, 26, 30, -1);            // Flur, Ostseite (öffnet nach 10 Bahnen)
+const realExitSign = realExit.sm, realDoor = realExit.door;
+const doorCol = { x1: 19.7, z1: 26, x2: 20.15, z2: 30 }; cols.push(doorCol);
+function setDoor(open) {
+  realDoor.visible = !open;
+  const i = cols.indexOf(doorCol);
+  if (open && i >= 0) cols.splice(i, 1);
+  if (!open && i < 0) cols.push(doorCol);
+}
 exitDoor(-33.78, 27, 31, 1);                             // Duschen (Falle)
+{ // Schild außen
+  const o = new THREE.Mesh(new THREE.PlaneGeometry(1.8, 0.45), new THREE.MeshBasicMaterial({ map: signTex('EINGANG', '#0a3d1c', '#8dffb2'), fog: false }));
+  o.position.set(20.32, DECK + 2.65, 28); o.rotation.y = Math.PI / 2; scene.add(o);
+}
 
 // Ziel-Markierungen am Beckenende
 const goalMat = new THREE.MeshBasicMaterial({ map: signTex('ZIEL', '#0a3140', '#7fe3ff'), fog: false });
@@ -390,6 +404,90 @@ goalN.position.set(0, DECK + 3.0, -HZ + 0.25);
 const goalS = new THREE.Mesh(new THREE.PlaneGeometry(4, 1), goalMat);
 goalS.position.set(8, DECK + 3.0, HZ - 0.25); goalS.rotation.y = Math.PI;
 scene.add(goalN, goalS);
+
+// ================= Außenbereich (Herbstabend) =================
+const OUT = { x1: -70, x2: 70, z1: -60, z2: 70 };
+function noiseTex(base, specks, n) {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'); g.fillStyle = base; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < n; i++) { g.fillStyle = specks[Math.floor(Math.random() * specks.length)]; g.fillRect(rand(0, 128), rand(0, 128), rand(1, 4), rand(1, 3)); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4; return t;
+}
+const grassMat = lamb(noiseTex('#6c6a3a', ['#8a5a2a', '#b0742e', '#4f5a2c', '#9a8a3a', '#a04a22'], 1100));
+const concreteMat = lamb(noiseTex('#b9b6ae', ['#a4a199', '#cbc8c0'], 500));
+const roofMat = lamb(noiseTex('#5b5f63', ['#4a4e52', '#6b7074'], 500));
+const asphaltMat = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 128;
+  const g = c.getContext('2d'); g.fillStyle = '#3d4044'; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 500; i++) { g.fillStyle = 'rgba(' + (Math.random() < 0.5 ? '255,255,255' : '0,0,0') + ',0.07)'; g.fillRect(rand(0, 128), rand(0, 128), 2, 2); }
+  g.fillStyle = '#d9d9cf'; g.fillRect(0, 0, 4, 96);                    // Parkplatz-Markierung
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return lamb(t);
+})();
+{
+  const G = DECK - 0.03;     // Boden-Höhe (um das Becken herum, damit das Becken frei bleibt)
+  flat(OUT.x1, OUT.z1, -HX, OUT.z2, G, grassMat, true, 4);
+  flat(HX, OUT.z1, OUT.x2, OUT.z2, G, grassMat, true, 4);
+  flat(-HX, OUT.z1, HX, -HZ, G, grassMat, true, 4);
+  flat(-HX, HZ, HX, OUT.z2, G, grassMat, true, 4);
+  flat(22, 14.5, 62, 56, DECK - 0.01, asphaltMat, true, 3);
+  flat(19.8, 24.5, 22, 31.5, DECK - 0.005, concreteMat, true, 2);
+  // Dächer, damit man von außen nicht ins Gebäude sieht
+  flat(-HX, -HZ, HX, HZ, DECK + HALL_H + 0.02, roofMat, true, 3);
+  for (const r of [[-30, -14, -14, 2], [14, -2, 30, 14], [-20, 24, 20, 32], [-34, 22, -20, 34]])
+    flat(r[0], r[1], r[2], r[3], DECK + ROOM_H + 0.02, roofMat, true, 3);
+
+  // Zaun (halbtransparent) = Spielfeldgrenze
+  const fenceMat = new THREE.MeshLambertMaterial({ color: 0x7d878c, transparent: true, opacity: 0.45 });
+  const f = (x1, z1, x2, z2) => box(Math.min(x1, x2) - (x1 === x2 ? 0.1 : 0), Math.min(z1, z2) - (z1 === z2 ? 0.1 : 0),
+                                    Math.max(x1, x2) + (x1 === x2 ? 0.1 : 0), Math.max(z1, z2) + (z1 === z2 ? 0.1 : 0), DECK, 2.6, fenceMat, true, 2);
+  f(OUT.x1, OUT.z1, OUT.x2, OUT.z1); f(OUT.x1, OUT.z2, OUT.x2, OUT.z2); f(OUT.x1, OUT.z1, OUT.x1, OUT.z2); f(OUT.x2, OUT.z1, OUT.x2, OUT.z2);
+
+  // Autos
+  const glass = new THREE.MeshLambertMaterial({ color: 0x1b2229 });
+  const dark = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+  const car = (x, z, color) => {
+    const m = new THREE.MeshLambertMaterial({ color });
+    box(x - 1, z - 2.15, x + 1, z + 2.15, DECK + 0.3, 0.75, m, true, 2);
+    box(x - 1.02, z - 1.9, x + 1.02, z + 1.9, DECK + 0.05, 0.3, dark, false, 2);
+    box(x - 0.85, z - 1.1, x + 0.85, z + 0.9, DECK + 1.05, 0.6, m, false, 2);
+    box(x - 0.87, z - 1.0, x + 0.87, z + 0.8, DECK + 1.1, 0.45, glass, false, 2);
+  };
+  [[28, 36, 0x8a4a3a], [34, 36, 0x3a5a7a], [46, 36, 0xb8b8b0], [52, 48, 0x4a5a46], [40, 48, 0x7a7a82], [28, 48, 0x9a7a3a]]
+    .forEach(c => car(c[0], c[1], c[2]));
+
+  // Laternen (3 mit echtem Licht)
+  const headMat = new THREE.MeshBasicMaterial({ color: 0xfff0c0 });
+  [[26, 20], [26, 52], [58, 20], [58, 52], [42, 34]].forEach(([x, z], i) => {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 5.2, 8), grayMat); pole.position.set(x, DECK + 2.6, z); scene.add(pole);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.14, 0.35), headMat); head.position.set(x, DECK + 5.25, z); scene.add(head);
+    addCol(x - 0.1, z - 0.1, x + 0.1, z + 0.1);
+    if (i === 0 || i === 4 || i === 3) { const pl = new THREE.PointLight(0xffcf8a, 1.1, 26); pl.position.set(x, DECK + 4.8, z); scene.add(pl); }
+  });
+
+  // Herbstbäume
+  const leaf = [0xc0561e, 0xd9892b, 0xb83a22, 0xcfae3a, 0x9a5a28];
+  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x4f3a2a });
+  [[-40, -10], [-45, 12], [-42, 40], [-30, 46], [-15, 42], [0, 46], [10, 50], [-55, 26], [-50, -32], [-20, -36],
+   [10, -36], [35, -32], [50, -12], [60, 4], [65, 36], [40, 62], [-5, 60]].forEach(([x, z]) => {
+    const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 3.2, 8), trunkMat); tr.position.set(x, DECK + 1.6, z); scene.add(tr);
+    for (let k = 0; k < 4; k++) {
+      const b = new THREE.Mesh(new THREE.IcosahedronGeometry(rand(1.1, 1.7), 1), new THREE.MeshLambertMaterial({ color: leaf[Math.floor(Math.random() * leaf.length)], flatShading: true }));
+      b.position.set(x + rand(-0.9, 0.9), DECK + rand(3.4, 4.6), z + rand(-0.9, 0.9)); scene.add(b);
+    }
+    addCol(x - 0.35, z - 0.35, x + 0.35, z + 0.35);
+  });
+}
+// Abendhimmel (folgt der Kamera)
+const sky = (() => {
+  const c = document.createElement('canvas'); c.width = 4; c.height = 256;
+  const g = c.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, '#4d6384'); gr.addColorStop(0.42, '#a9949a'); gr.addColorStop(0.5, '#f0b383');
+  gr.addColorStop(0.56, '#8a6a5e'); gr.addColorStop(1, '#2e2e34');
+  g.fillStyle = gr; g.fillRect(0, 0, 4, 256);
+  const m = new THREE.Mesh(new THREE.SphereGeometry(150, 16, 12),
+    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), side: THREE.BackSide, fog: false, depthWrite: false }));
+  m.renderOrder = -1; scene.add(m); return m;
+})();
 
 // ================= Vorräte =================
 const supplies = [];
@@ -433,7 +531,7 @@ const SH = { x: BASIN.x - 0.7, z: BASIN.z - 0.8 };    // Bewegungsgrenzen im Bec
 // ================= Spielzustand =================
 const player = { x: 0, z: -21, yaw: Math.PI, pitch: 0, stamina: 1, eye: EYE_DECK, bob: 0, inWater: false, moving: false, sprinting: false, regenDelay: 0, drown: 0 };
 let state = 'menu';            // menu | play | paused | over
-let laps = 0, target = 'S', finished = false, runTime = 0;
+let laps = 0, target = 'S', finished = false, runTime = 0, escaped = false;
 let msgT = 0, heartT = 0, eventT = 8, dripT = 4, dimT = 0;
 
 function setOverlay(title, text, hint, color) {
@@ -443,11 +541,11 @@ function setOverlay(title, text, hint, color) {
 function showMsg(t, dur = 2.6) { $('msg').textContent = t; $('msg').style.opacity = 1; msgT = dur; }
 
 function resetGame() {
-  laps = 0; target = 'S'; finished = false; runTime = 0; dimT = 0;
+  laps = 0; target = 'S'; finished = false; runTime = 0; dimT = 0; escaped = false;
   Object.assign(player, { x: 0, z: -21, yaw: Math.PI, pitch: 0, stamina: 1, eye: EYE_DECK, inWater: false, drown: 0, regenDelay: 0 });
   for (const s of supplies) { s.taken = false; s.g.visible = true; }
   Object.assign(shark, { x: 0, z: 10, ang: Math.PI, alert: 0, mode: 'wander', wt: 0 });
-  realExitSign.map = redSign; realExitSign.needsUpdate = true;
+  realExitSign.map = redSign; realExitSign.needsUpdate = true; setDoor(false);
   goalS.visible = true; goalN.visible = false;
   $('vig').style.opacity = 0; $('drown').style.opacity = 0; $('dim').style.opacity = 0;
 }
@@ -457,7 +555,7 @@ const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
-  if (e.code === 'KeyR' && state === 'over') begin();
+  if (e.code === 'KeyR') { if (state === 'over') begin(); else if (escaped && state === 'play') resetGame(); }
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
@@ -483,13 +581,13 @@ function pause() {
 $('ov').addEventListener('click', () => { if (state !== 'play') begin(); });
 
 // ================= Audio (komplett synthetisch) =================
-let AC = null, master = null;
+let AC = null, master = null, humG = null, nsG = null;
 function initAudio() {
   if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
   try {
     AC = new (window.AudioContext || window.webkitAudioContext)();
     master = AC.createGain(); master.gain.value = 0.7; master.connect(AC.destination);
-    const hum = AC.createGain(); hum.gain.value = 0.05; hum.connect(master);
+    const hum = AC.createGain(); hum.gain.value = 0.05; hum.connect(master); humG = hum;
     for (const f of [60, 120.5, 181]) {
       const o = AC.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
       const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 400;
@@ -499,7 +597,7 @@ function initAudio() {
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     const n = AC.createBufferSource(); n.buffer = buf; n.loop = true;
     const nf = AC.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 500;
-    const ng = AC.createGain(); ng.gain.value = 0.08;
+    const ng = AC.createGain(); ng.gain.value = 0.08; nsG = ng;
     n.connect(nf); nf.connect(ng); ng.connect(master); n.start();
   } catch (e) { AC = null; }
 }
@@ -569,11 +667,12 @@ function updateShark(dt) {
 }
 
 function zoneAt(x, z) {
-  if (Math.abs(x) < HX && Math.abs(z) < HZ) return 'hall';
-  if (x < -20 && z > 22) return 'shower';
-  if (x < -14 && z < 2.5) return 'a';
-  if (x > 14 && x < 30 && z > -2.5 && z < 14.5) return 'b';
-  return 'flur';
+  if (Math.abs(x) < HX + 0.2 && Math.abs(z) < HZ + 0.2) return 'hall';
+  if (x > -34 && x < -20 && z > 22 && z < 34) return 'shower';
+  if (x > -30 && x < -14 && z > -14 && z < 2) return 'a';
+  if (x > 14 && x < 30 && z > -2 && z < 14) return 'b';
+  if (x > -20 && x < 20.2 && z > 24 && z < 32) return 'flur';
+  return 'out';
 }
 const ZONES = {
   hall:   { c: new THREE.Color(0xa8dde6), d: 0.028 },
@@ -581,6 +680,7 @@ const ZONES = {
   b:      { c: new THREE.Color(0xcde3c4), d: 0.055 },
   shower: { c: new THREE.Color(0xcfe9f1), d: 0.055 },
   flur:   { c: new THREE.Color(0xdcd993), d: 0.05 },
+  out:    { c: new THREE.Color(0xd2b79e), d: 0.017 },
 };
 
 function teleportToPool() {
@@ -597,14 +697,10 @@ function die(title, text) {
   setOverlay(title, text + '<br>Bahnen: <b>' + laps + '/' + LAPS + '</b>', 'Klicken oder R für einen neuen Versuch', '#ff7a7a');
   $('ov').classList.remove('hidden');
 }
-function win() {
-  state = 'over'; chime();
-  if (document.pointerLockElement) document.exitPointerLock();
-  const t = runTime;
-  if (!best || t < best) { best = t; saveBest(); }
-  const f = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
-  setOverlay('ENTKOMMEN', 'Du stehst draußen. Es riecht nach Herbst und Chlor.<br>Zeit: <b>' + f(t) + '</b> · Bestzeit: <b>' + f(best) + '</b>', 'Klicken für einen neuen Versuch', '#8dffb2');
-  $('ov').classList.remove('hidden');
+function escapeNow() {
+  escaped = true; chime();
+  if (!best || runTime < best) { best = runTime; saveBest(); }
+  showMsg('Du bist draußen. Es riecht nach Herbst und Chlor.', 5);
 }
 
 // ================= Update =================
@@ -618,7 +714,7 @@ function update(dt, time) {
   panelMat.color.setScalar(flick); hemi.intensity = 1.15 * (dimT > 0 ? 0.18 : (0.85 + 0.15 * flick));
 
   if (state !== 'play') { applyCamera(); return; }
-  runTime += dt;
+  if (!escaped) runTime += dt;
 
   // Eingabe
   let mx = 0, mz = 0;
@@ -682,15 +778,15 @@ function update(dt, time) {
 
   // Ausgangstüren
   const z = zoneAt(player.x, player.z);
-  if (z === 'flur' && player.x > 19.2 && player.z > 26 && player.z < 30) {
-    if (finished) { win(); return; } else teleportToPool();
-  }
+  if (!finished && z === 'flur' && player.x > 19.2 && player.z > 26 && player.z < 30) teleportToPool();
+  if (finished && !escaped && player.x > 21 && player.z > 20) escapeNow();
   if (z === 'shower' && player.x < -33.2 && player.z > 27 && player.z < 31) teleportToPool();
 
   // Atmosphäre: Nebel je Zone, Herzschlag, Zufallsereignisse
   const zn = ZONES[z];
   scene.fog.color.lerp(zn.c, Math.min(1, dt * 1.5)); scene.background.copy(scene.fog.color);
   scene.fog.density += (zn.d - scene.fog.density) * Math.min(1, dt * 1.5);
+  if (humG) { const k = Math.min(1, dt * 2); humG.gain.value += ((z === 'out' ? 0.006 : 0.05) - humG.gain.value) * k; nsG.gain.value += ((z === 'out' ? 0.03 : 0.08) - nsG.gain.value) * k; }
 
   const danger = player.inWater ? clamp(1 - (dist - 3) / 14, 0, 1) : (shark.mode === 'stalk' ? 0.15 : 0);
   $('vig').style.opacity = (danger * danger * 0.9).toFixed(2);
@@ -710,7 +806,9 @@ function update(dt, time) {
   $('fill').style.background = player.stamina <= 0 ? '#ff5a5a' : (player.stamina < 0.25 ? '#ff8a6a' : '#7fe3ff');
   const left = supplies.filter(s => !s.taken).length;
   $('sup').innerHTML = 'Getränke übrig: <b>' + left + '</b>';
-  $('lap').innerHTML = finished
+  $('lap').innerHTML = escaped
+    ? 'Draußen!<small>Zeit ' + fmt(runTime) + ' · Bestzeit ' + fmt(best) + ' · R = neues Spiel · du kannst frei herumlaufen</small>'
+    : finished
     ? 'Alle Bahnen geschafft!<small>Der Ausgang im Eingangsflur ist offen (südlich der Halle).</small>'
     : 'Bahn <b>' + Math.min(laps + 1, LAPS) + '/' + LAPS + '</b><small>Schwimm zum ' + (target === 'S' ? 'Südende (Startblöcke)' : 'Nordende') + ' des Beckens</small>';
 }
@@ -719,7 +817,7 @@ function lapDone() {
   chime();
   if (laps >= LAPS) {
     finished = true; goalN.visible = goalS.visible = false;
-    realExitSign.map = greenSign; realExitSign.needsUpdate = true;
+    realExitSign.map = greenSign; realExitSign.needsUpdate = true; setDoor(true);
     showMsg('Zehn Bahnen. Der Ausgang im Flur ist jetzt offen.', 4);
   } else {
     goalN.visible = target === 'N'; goalS.visible = target === 'S';
@@ -730,6 +828,7 @@ function lapDone() {
 function applyCamera() {
   const bob = Math.sin(player.bob) * (player.inWater ? 0.07 : 0.04);
   camera.position.set(player.x, player.eye + bob, player.z);
+  sky.position.copy(camera.position);
   camera.rotation.set(player.pitch, player.yaw, player.inWater ? Math.sin(player.bob * 0.5) * 0.015 : 0);
 }
 
@@ -747,7 +846,7 @@ requestAnimationFrame(frame);
 
 // Test-Schnittstelle
 window.__g = {
-  get state() { return state; }, get laps() { return laps; }, get finished() { return finished; },
+  get state() { return state; }, get laps() { return laps; }, get finished() { return finished; }, get escaped() { return escaped; },
   player, shark, supplies, start: begin,
   teleport(x, z) { player.x = x; player.z = z; player.inWater = inBasin(x, z); player.eye = player.inWater ? EYE_WATER : EYE_DECK; },
   look(yaw, pitch) { player.yaw = yaw; player.pitch = pitch || 0; },
