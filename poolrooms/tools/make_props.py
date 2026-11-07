@@ -116,12 +116,12 @@ GRAY, STEEL, WHITE = (0.62, 0.66, 0.68), (0.55, 0.6, 0.64), (0.92, 0.93, 0.94)
 
 # ---------------------------------------------------------------- Quietscheente
 def make_duck():
-    m = Model('duck'); Y = (1.0, 0.80, 0.10); Yd = (0.96, 0.70, 0.06); O = (1.0, 0.42, 0.06); K = (0.02, 0.02, 0.02)
+    m = Model('duck'); Y = (0.93, 0.74, 0.17); Yd = (0.88, 0.67, 0.13); O = (0.88, 0.42, 0.12); K = (0.02, 0.02, 0.02)
     m.add(ellipsoid((0, 1.0, 0), (1.0, 0.85, 1.45), (-0.10, 0, 0), 32, 24), Y)                 # Koerper
     m.add(ellipsoid((0, 1.50, -1.28), (0.34, 0.34, 0.62), (0.75, 0, 0)), Y)                    # Schwanz
     m.add(ellipsoid((0, 2.12, 0.82), (0.66, 0.62, 0.66), (0, 0, 0), 28, 20), Y)                # Kopf
     m.add(ellipsoid((0, 2.05, 1.46), (0.38, 0.11, 0.48), (0.05, 0, 0)), O)                     # Oberschnabel
-    m.add(ellipsoid((0, 1.94, 1.42), (0.31, 0.07, 0.40), (0.05, 0, 0)), (0.9, 0.34, 0.05))     # Unterschnabel
+    m.add(ellipsoid((0, 1.94, 1.42), (0.31, 0.07, 0.40), (0.05, 0, 0)), (0.80, 0.34, 0.09))     # Unterschnabel
     for sx in (-1, 1):
         m.add(ellipsoid((sx * 1.04, 1.18, -0.10), (0.24, 0.46, 0.82), (0, 0, sx * 0.20)), Yd)  # Fluegel
         m.add(ellipsoid((sx * 0.40, 2.32, 1.22), (0.12, 0.13, 0.12), (0, 0, 0), 14, 10), K)     # Auge
@@ -132,20 +132,20 @@ def make_duck():
 def make_ring():
     m = Model('ring')
     bm = torus((0, 0.34, 0), 1.05, 0.34)
-    paint(bm, lambda p: (0.95, 0.35, 0.55) if int((math.atan2(p[2], p[0]) + math.pi) / (2 * math.pi) * 16) % 2 else (0.96, 0.96, 0.97))
+    paint(bm, lambda p: (0.50, 0.66, 0.78) if int((math.atan2(p[2], p[0]) + math.pi) / (2 * math.pi) * 16) % 2 else (0.86, 0.88, 0.89))
     m.add(bm); return m
 
 def make_ball():
     m = Model('ball'); bm = ellipsoid((0, 0.85, 0), (0.85, 0.85, 0.85), (0, 0, 0), 36, 24)
-    cols = [(0.9, 0.12, 0.12), (0.97, 0.97, 0.97), (0.1, 0.35, 0.85), (0.97, 0.97, 0.97), (0.97, 0.82, 0.1), (0.97, 0.97, 0.97)]
-    paint(bm, lambda p: (0.97, 0.97, 0.97) if abs(p[1] - 0.85) > 0.78 else cols[int((math.atan2(p[2], p[0]) + math.pi) / (2 * math.pi) * 6) % 6])
+    cols = [(0.70, 0.17, 0.15), (0.88, 0.88, 0.87), (0.17, 0.32, 0.60), (0.88, 0.88, 0.87), (0.80, 0.66, 0.15), (0.88, 0.88, 0.87)]
+    paint(bm, lambda p: (0.88, 0.88, 0.87) if abs(p[1] - 0.85) > 0.78 else cols[int((math.atan2(p[2], p[0]) + math.pi) / (2 * math.pi) * 6) % 6])
     m.add(bm); return m
 
 # ---------------------------------------------------------------- Liege
 def make_lounger():
     m = Model('lounger'); L = 2.0
-    bm = box((0, 0.38, 0), (0.72, 0.12, 1.15)); paint(bm, lambda p: (0.2, 0.45, 0.8) if int((p[2] + 5) / 0.16) % 2 else (0.95, 0.95, 0.96)); m.add(bm, mods=None)
-    bm = box((0, 0.74, -0.78), (0.72, 0.12, 0.95), (0.95, 0, 0)); paint(bm, lambda p: (0.2, 0.45, 0.8) if int((p[2] + 5) / 0.16) % 2 else (0.95, 0.95, 0.96)); m.add(bm)
+    bm = box((0, 0.38, 0), (0.72, 0.12, 1.15)); paint(bm, lambda p: (0.35, 0.50, 0.65) if int((p[2] + 5) / 0.16) % 2 else (0.86, 0.87, 0.88)); m.add(bm, mods=None)
+    bm = box((0, 0.74, -0.78), (0.72, 0.12, 0.95), (0.95, 0, 0)); paint(bm, lambda p: (0.35, 0.50, 0.65) if int((p[2] + 5) / 0.16) % 2 else (0.86, 0.87, 0.88)); m.add(bm)
     for sx in (-1, 1):
         for z in (-0.5, 0.45): m.add(tube([(sx * 0.33, 0, z), (sx * 0.33, 0.32, z)], 0.025, 10), STEEL)
         m.add(tube([(sx * 0.35, 0.31, -0.55), (sx * 0.35, 0.31, 0.58)], 0.025, 10), STEEL)
@@ -170,12 +170,12 @@ def make_lifeguard():
     for sx in (-1, 1):
         for sz in (-1, 1): m.add(tube([(sx * 0.95, 0, sz * 0.85), (sx * 0.6, 2.0, sz * 0.55)], 0.06, 10), W)
     m.add(box((0, 2.05, 0), (1.35, 0.1, 1.2)), (0.85, 0.85, 0.87), BEVEL(0.015, 2))
-    m.add(box((0, 2.65, -0.62), (1.3, 1.0, 0.08)), (0.95, 0.3, 0.1), BEVEL(0.015, 2))
+    m.add(box((0, 2.65, -0.62), (1.3, 1.0, 0.08)), (0.72, 0.28, 0.14), BEVEL(0.015, 2))
     for sx in (-1, 1): m.add(box((sx * 0.62, 2.4, 0), (0.07, 0.07, 1.1)), W)
     for k in range(6): m.add(box((0, 0.3 + k * 0.32, 0.97 - k * 0.07), (0.9, 0.06, 0.12)), W)   # Leiter
     m.add(box((0, 0.3, 0.9), (0.06, 0.06, 0.06)), W)
     bm = lathe([(0, 3.35), (0.5, 3.18), (1.15, 2.92), (1.2, 2.88), (0, 2.88)], c=(0, 0, -0.1), seg=24)
-    paint(bm, lambda p: (0.9, 0.18, 0.14) if int((math.atan2(p[2] + 0.1, p[0]) + math.pi) / (2 * math.pi) * 8) % 2 else (0.96, 0.96, 0.96)); m.add(bm)
+    paint(bm, lambda p: (0.68, 0.17, 0.14) if int((math.atan2(p[2] + 0.1, p[0]) + math.pi) / (2 * math.pi) * 8) % 2 else (0.86, 0.86, 0.85)); m.add(bm)
     m.add(tube([(0, 2.88, -0.1), (0, 2.1, -0.1)], 0.04, 8), W); return m
 
 # ---------------------------------------------------------------- Poolnudeln
@@ -188,7 +188,7 @@ SLIDE_CTRL = [(-1.8, 4.75, 0), (-4.0, 4.35, 0.0), (-7.0, 3.60, 1.6), (-9.2, 2.75
               (-6.0, 1.35, 9.2), (-3.0, 1.05, 9.4), (-0.5, 0.90, 9.0), (1.2, 0.85, 8.7)]
 def make_slide():
     m = Model('slide'); path = catmull(SLIDE_CTRL, 16)
-    bands = [(1.0, 0.52, 0.10), (0.20, 0.72, 0.88), (0.98, 0.9, 0.2)]
+    bands = [(0.80, 0.84, 0.86), (0.48, 0.64, 0.74), (0.88, 0.90, 0.91)]
     m.add(tube([tuple(p) for p in path], 0.62, 30, caps=False, facecol=lambda i: bands[(i // 8) % 3]), mat=2)
     m.add(box((0, 4.1, 0), (3.6, 0.2, 3.6)), (0.68, 0.76, 0.80), BEVEL(0.02, 2))                    # Plattform
     for sx in (-1, 1):
@@ -204,6 +204,47 @@ def make_slide():
         if p.x < -3.0: m.add(tube([(p.x, 0, p.z), (p.x, p.y - 0.55, p.z)], 0.09, 10), GRAY); m.add(box((p.x, 0.04, p.z), (0.5, 0.08, 0.5)), GRAY)
     dense = [path[i] for i in range(0, len(path), 2)]
     m.meta['path'] = [[round(p.x, 2), round(p.y, 2), round(p.z, 2)] for p in dense]
+    return m
+
+
+# ---------------------------------------------------------------- Poolrooms-typische Objekte
+def make_domelamp():
+    """Industrielle Haengelampe; Ursprung = Aufhaengepunkt oben, haengt nach unten. mat 3 = leuchtend, mat 4 = Metall."""
+    m = Model('domelamp'); METAL = (0.30, 0.32, 0.34)
+    m.add(lathe([(0.04, 0.0), (0.05, -0.05), (0.14, -0.06), (0.30, -0.22), (0.33, -0.27), (0.29, -0.285), (0.04, -0.285)], seg=28), METAL, mat=4)
+    m.add(ellipsoid((0, -0.29, 0), (0.17, 0.13, 0.17), (0, 0, 0), 20, 14), (1.0, 0.93, 0.78), mat=3)
+    m.add(torus((0, -0.30, 0), 0.30, 0.012), (0.55, 0.57, 0.6), mat=4)
+    for k in range(6):
+        a = 2 * math.pi * k / 6
+        m.add(tube([(0.30 * math.cos(a), -0.30, 0.30 * math.sin(a)), (0.12 * math.cos(a), -0.48, 0.12 * math.sin(a)), (0.0, -0.52, 0.0)], 0.008, 6), (0.55, 0.57, 0.6), mat=4)
+    return m
+
+def make_pipe(name, col):
+    """Senkrechtes Rohr mit Flanschen und Kruemmer nach -z (in die Wand)."""
+    m = Model(name); H = 6.2; R = 0.45; dark = (col[0] * 0.55, col[1] * 0.55, col[2] * 0.55)
+    m.add(tube([(0, 0, 0), (0, H, 0)], 0.20, 20), col)
+    for y in (0.35, 2.6, 4.6): m.add(tube([(0, y - 0.04, 0), (0, y + 0.04, 0)], 0.27, 20), dark)
+    el = [(0, H + R * math.sin(a), -R + R * math.cos(a)) for a in [i * math.pi / 2 / 10 for i in range(11)]]
+    m.add(tube(el + [(0, H + R, -R - 0.9)], 0.20, 20), col)
+    m.add(tube([(0, H + R, -R - 0.55), (0, H + R, -R - 0.63)], 0.27, 20), dark)
+    m.add(tube([(0, 0, 0), (0, 0.05, 0)], 0.30, 20), dark)
+    return m
+
+def make_ladder():
+    """Verchromte Beckenleiter: Holme biegen sich ueber den Rand ins Wasser (Ursprung am Rand, Abstieg nach +z)."""
+    m = Model('ladder'); CH = (0.80, 0.82, 0.85)
+    rail = lambda x: [(x, 0.0, -0.15), (x, 0.55, -0.15), (x, 1.02, -0.10), (x, 1.22, 0.08), (x, 1.12, 0.28), (x, 0.55, 0.50), (x, -0.4, 0.58), (x, -1.2, 0.60)]
+    for x in (-0.26, 0.26):
+        m.add(tube(catmull(rail(x), 5), 0.022, 12), CH, mat=4)
+        m.add(tube([(x, 0.0, -0.15), (x, 0.02, -0.15)], 0.05, 14), (0.6, 0.62, 0.65), mat=4)
+    for y, z in ((0.32, 0.53), (-0.25, 0.575), (-0.8, 0.595)): m.add(tube([(-0.26, y, z), (0.26, y, z)], 0.018, 10), CH, mat=4)
+    return m
+
+def make_stool():
+    m = Model('stool'); W = (0.88, 0.88, 0.87)
+    m.add(lathe([(0.0, 0.43), (0.21, 0.43), (0.22, 0.41), (0.21, 0.39), (0.0, 0.39)], seg=24), W)
+    for sx in (-1, 1): m.add(tube([(sx * 0.15, 0.40, 0.0), (sx * 0.14, 0.0, 0.10), (sx * 0.14, 0.0, -0.10)], 0.018, 8), W)
+    m.add(box((0, 0.03, 0), (0.30, 0.025, 0.22)), W)
     return m
 
 # ---------------------------------------------------------------- Export mit Ambient Occlusion
@@ -241,9 +282,9 @@ def export_model(model):
                 key = (round(co.x, 3), round(co.y, 3), round(co.z, 3), round(n.x, 2), round(n.y, 2), round(n.z, 2), tuple(round(c, 3) for c in alb))
                 if key not in cache:
                     tt = n.cross(Vector((0, 0, 1)) if abs(n.z) < 0.9 else Vector((1, 0, 0))).normalized(); bb = n.cross(tt); hits = 0
-                    for u, v, w in DIRS:
+                    for u, v, w in (() if mat == 3 else DIRS):
                         if bvh.ray_cast(co + n * 0.06, tt * u + bb * v + n * w, 1.0)[0] is not None: hits += 1
-                    ao = (1 - hits / len(DIRS)) * 0.6 + 0.4
+                    ao = 1.0 if mat == 3 else (1 - hits / len(DIRS)) * 0.6 + 0.4
                     c8 = tuple(int(max(0, min(255, round(255 * c * ao)))) for c in alb)
                     pos = (co.x, co.z, -co.y); nr = (n.x, n.z, -n.y)
                     cache[key] = len(verts); verts.append((pos, nr, c8))
@@ -265,7 +306,8 @@ def pack(verts, idx, mat):
     return '{m:%d,s:%.8f,p:"%s",nm:"%s",c:"%s",i:"%s"}' % (mat, s, e(P_), e(N_), e(C_), e(I_))
 
 built = [make_duck(), make_ring(), make_ball(), make_lounger(), make_hottub(), make_lifeguard(),
-         make_noodle('noodleB', (0.2, 0.55, 0.95)), make_noodle('noodleP', (0.95, 0.4, 0.65)), make_noodle('noodleG', (0.3, 0.85, 0.45)), make_slide()]
+         make_noodle('noodleB', (0.30, 0.50, 0.75)), make_noodle('noodleP', (0.78, 0.50, 0.62)), make_noodle('noodleG', (0.40, 0.65, 0.50)), make_slide(),
+         make_domelamp(), make_pipe('pipeR', (0.62, 0.10, 0.10)), make_pipe('pipeB', (0.10, 0.28, 0.58)), make_pipe('pipeY', (0.78, 0.60, 0.10)), make_ladder(), make_stool()]
 js = ['// automatisch erzeugt von tools/make_props.py (Blender %s)' % bpy.app.version_string, 'window.PROPS = {']
 total = 0
 for md in built:
