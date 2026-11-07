@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Haie &amp; Fischlein</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #06222f; font-family: system-ui, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 12px; box-sizing: border-box; }
+  canvas { width: min(100%, 960px); height: auto; aspect-ratio: 960 / 540; border-radius: 14px; touch-action: none; background: #0a4a66; box-shadow: 0 10px 40px rgba(0,0,0,.5); }
+  p { color: #9cc7d8; margin: 0; font-size: 14px; text-align: center; max-width: 720px; line-height: 1.4; }
+  b { color: #fff; }
+</style>
+</head>
+<body>
+<canvas id="c" width="960" height="540" aria-label="Spielfeld"></canvas>
+<p><b>Ziel:</b> Schwimm von einer Seite zur anderen, ohne von einem Hai berührt zu werden. Gefangene Fische werden selbst zu Haien.<br>
+<b>Steuerung:</b> Pfeiltasten / WASD, oder Maus/Finger gedrückt halten. <b>Start:</b> Leertaste oder Tippen.</p>
+
+<script>
+(() => {
+'use strict';
+
+// ---------- Konstanten ----------
+const W = 960, H = 540, SAFE = 100;
+const PLAYER_SPEED = 185;
+const AI_MINNOWS = 11;
+const MINNOW_R = 9, SHARK_R = 17, TAG_DIST = 18;
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+// ---------- Highscore (localStorage kann fehlen/blockiert sein) ----------
+let best = 0;
+try { best = parseInt(localStorage.getItem('sm_best') || '0', 10) || 0; } catch (e) {}
+function saveBest() { try { localStorage.setItem('sm_best', String(best)); } catch (e) {} }
+
+// ---------- Zustand ----------
+let state = 'ready';         // ready | run | settle | over
+let round = 1;
+let dir = 1;                 // +1 = links -> rechts, -1 = rechts -> links
+let minnows = [], sharks = [], bubbles = [];
+let player = null;
+let settleT = 0, flash = 0, banner = '', bannerT = 0;
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const inSafe = x => x < SAFE || x > W - SAFE;
+const inGoal = x => dir === 1 ? x > W - SAFE : x < SAFE;
+
+function startX() { return dir === 1 ? rand(18, SAFE - 18) : rand(W - SAFE + 18, W - 18); }
+
+function makeMinnow(isPlayer) {
+  return { x: startX(), y: rand(30, H - 30), vx: 0, vy: 0, ang: dir === 1 ? 0 : Math.PI,
+           player: isPlayer, alive: true, wait: 0, ty: rand(40, H - 40), ph: rand(0, 6.28) };
+}
+function makeShark(x, y, stun = 0) {
+  return { x, y, vx: 0, vy: 0, ang: rand(0, 6.28), stun, ph: rand(0, 6.28) };
+}
+
+function newGame() {
+  round = 1; dir = 1; flash = 0;
+  minnows = []; sharks = [];
+  player = makeMinnow(true); player.y = H / 2;
+  minnows.push(player);
+  for (let i = 0; i < AI_MINNOWS; i++) minnows.push(makeMinnow(false));
+  sharks.push(makeShark(W / 2, H / 2));
+  state = 'ready';
+}
+
+function ensureSharkCount() {
+  // Mindestens so viele Haie, dass es von Runde zu Runde schwerer wird.
+  const want = Math.min(1 + Math.floor((round - 1) / 2), 6);
+  while (sharks.length < want) {
+    sharks.push(makeShark(rand(SAFE + 60, W - SAFE - 60), rand(40, H - 40)));
+  }
+}
+
+function beginRound() {
+  state = 'run';
+  for (const m of minnows) if (!m.player) m.wait = rand(0, 1.4);
+  for (const m of minnows) m.ty = rand(40, H - 40);
+}
+
+function endRoundPrep() {
+  // Alle Überlebenden stehen jetzt in der Zielzone -> nächste Runde in Gegenrichtung.
+  for (const m of minnows) {
+    if (!inGoal(m.x)) m.x = dir === 1 ? rand(W - SAFE + 18, W - 18) : rand(18, SAFE - 18);
+    m.vx = m.vy = 0;
+  }
+  dir = -dir;
+  round++;
+  ensureSharkCount();
+  state = 'ready';
+}
+
+// ---------- Eingabe ----------
+const keys = {};
+let pointer = null;
+addEventListener('keydown', e => {
+  if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) e.preventDefault();
+  keys[e.key.toLowerCase()] = true;
+  if (e.key === ' ' || e.key === 'Enter') action();
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+function canvasPos(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height };
+}
+canvas.addEventListener('pointerdown', e => {
+  canvas.setPointerCapture(e.pointerId);
+  pointer = canvasPos(e);
+  action();
+});
+canvas.addEventListener('pointermove', e => { if (pointer) pointer = canvasPos(e); });
+const release = () => { pointer = null; };
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+
+function action() {
+  if (state === 'ready') beginRound();
+  else if (state === 'over') newGame();
+}
+
+function playerInput() {
+  let dx = 0, dy = 0;
+  if (keys['arrowleft'] || keys['a']) dx -= 1;
+  if (keys['arrowright'] || keys['d']) dx += 1;
+  if (keys['arrowup'] || keys['w']) dy -= 1;
+  if (keys['arrowdown'] || keys['s']) dy += 1;
+  if (!dx && !dy && pointer) {
+    const ox = pointer.x - player.x, oy = pointer.y - player.y;
+    const d = Math.hypot(ox, oy);
+    if (d > 6) { dx = ox / d; dy = oy / d; }
+  }
+  const l = Math.hypot(dx, dy);
+  return l ? { x: dx / l, y: dy / l } : { x: 0, y: 0 };
+}
+
+// ---------- Simulation ----------
+function steerMinnow(m, dt) {
+  if (m.wait > 0) { m.wait -= dt; return; }
+  let tx = dir, ty = clamp((m.ty - m.y) / 160, -0.8, 0.8);
+  for (const s of sharks) {
+    const dx = m.x - s.x, dy = m.y - s.y, d = Math.hypot(dx, dy);
+    if (d < 120 && d > 0.1) {
+      const k = (1 - d / 120) * 3.2;
+      tx += dx / d * k; ty += dy / d * k;
+    }
+  }
+  // Wände meiden
+  if (m.y < 30) ty += 1; if (m.y > H - 30) ty -= 1;
+  const l = Math.hypot(tx, ty) || 1;
+  const sp = 140 + (m.ph % 1) * 25;
+  m.vx += (tx / l * sp - m.vx) * Math.min(1, dt * 6);
+  m.vy += (ty / l * sp - m.vy) * Math.min(1, dt * 6);
+}
+
+function steerShark(s, dt) {
+  if (s.stun > 0) { s.stun -= dt; s.vx *= 0.9; s.vy *= 0.9; return; }
+  let best = null, bd = 1e9;
+  for (const m of minnows) {
+    if (!m.alive || inSafe(m.x)) continue;
+    let d = Math.hypot(m.x - s.x, m.y - s.y);
+    if (m.player) d *= 0.8;               // Spieler wird leicht bevorzugt gejagt
+    if (d < bd) { bd = d; best = m; }
+  }
+  let tx, ty;
+  if (best) {
+    const lead = Math.min(0.35, bd / 600);
+    tx = best.x + best.vx * lead - s.x;
+    ty = best.y + best.vy * lead - s.y;
+  } else {                                 // niemand im Wasser: im Kreis patrouillieren
+    s.ph += dt;
+    tx = W / 2 + Math.cos(s.ph) * 220 - s.x;
+    ty = H / 2 + Math.sin(s.ph * 1.3) * 160 - s.y;
+  }
+  // Haie nicht stapeln
+  for (const o of sharks) {
+    if (o === s) continue;
+    const dx = s.x - o.x, dy = s.y - o.y, d = Math.hypot(dx, dy);
+    if (d < 50 && d > 0.1) { tx += dx / d * 60; ty += dy / d * 60; }
+  }
+  const l = Math.hypot(tx, ty) || 1;
+  const sp = Math.min(118 + round * 4, 152);
+  s.vx += (tx / l * sp - s.vx) * Math.min(1, dt * 4);
+  s.vy += (ty / l * sp - s.vy) * Math.min(1, dt * 4);
+}
+
+function move(o, dt, minX, maxX) {
+  o.x = clamp(o.x + o.vx * dt, minX, maxX);
+  o.y = clamp(o.y + o.vy * dt, 14, H - 14);
+  if (Math.hypot(o.vx, o.vy) > 12) {
+    // Winkel weich nachführen, damit sich Fische nicht ruckartig drehen
+    const target = Math.atan2(o.vy, o.vx);
+    let diff = target - o.ang;
+    while (diff > Math.PI) diff -= 6.2832;
+    while (diff < -Math.PI) diff += 6.2832;
+    o.ang += diff * Math.min(1, dt * 10);
+  }
+  o.ph += dt * (4 + Math.hypot(o.vx, o.vy) / 25);
+}
+
+function update(dt) {
+  flash = Math.max(0, flash - dt);
+  bannerT = Math.max(0, bannerT - dt);
+  for (const b of bubbles) { b.y -= b.v * dt; if (b.y < -10) { b.y = H + 10; b.x = rand(0, W); } }
+
+  if (state === 'ready' || state === 'over') {
+    // Haie schwimmen gemächlich weiter, damit das Bild lebt
+    for (const s of sharks) { steerShark(s, dt); move(s, dt, SAFE + 10, W - SAFE - 10); }
+    return;
+  }
+
+  // Spieler
+  if (player.alive) {
+    const inp = playerInput();
+    player.vx = inp.x * PLAYER_SPEED;
+    player.vy = inp.y * PLAYER_SPEED;
+  }
+  for (const m of minnows) if (m.alive && !m.player) steerMinnow(m, dt);
+  for (const m of minnows) if (m.alive) move(m, dt, 12, W - 12);
+  for (const s of sharks) { steerShark(s, dt); move(s, dt, SAFE + 10, W - SAFE - 10); }
+
+  // Fangen
+  for (const s of sharks) {
+    if (s.stun > 0) continue;
+    for (const m of minnows) {
+      if (!m.alive || inSafe(m.x)) continue;
+      if (Math.hypot(m.x - s.x, m.y - s.y) < TAG_DIST) {
+        m.alive = false;
+        if (m.player) {
+          state = 'over'; flash = 0.4;
+          const done = round - 1;
+          if (done > best) { best = done; saveBest(); }
+        } else {
+          sharks.push(makeShark(clamp(m.x, SAFE + 12, W - SAFE - 12), m.y, 0.8));
+        }
+      }
+    }
+  }
+  minnows = minnows.filter(m => m.alive || m.player);
+  if (state === 'over') return;
+
+  // Runde geschafft?
+  if (state === 'run' && inGoal(player.x)) {
+    state = 'settle'; settleT = 0;
+    banner = 'Runde ' + round + ' geschafft!'; bannerT = 1.6;
+    const done = round;
+    if (done > best) { best = done; saveBest(); }
+  }
+  if (state === 'settle') {
+    settleT += dt;
+    const transit = minnows.some(m => m.alive && !m.player && !inGoal(m.x));
+    if (!transit || settleT > 5) endRoundPrep();
+  }
+}
+
+// ---------- Zeichnen ----------
+function drawFish(m, color, big) {
+  const L = big ? 15 : 12;
+  ctx.save();
+  ctx.translate(m.x, m.y); ctx.rotate(m.ang);
+  const wig = Math.sin(m.ph) * 0.35;
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.moveTo(-L * 0.7, 0);                       // Schwanz
+  ctx.lineTo(-L * 1.5, -L * 0.6 + wig * L); ctx.lineTo(-L * 1.5, L * 0.6 + wig * L);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0, 0, L, L * 0.6, 0, 0, 6.2832); ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath(); ctx.arc(L * 0.5, -L * 0.15, L * 0.18, 0, 6.2832); ctx.fill();
+  ctx.fillStyle = '#012';
+  ctx.beginPath(); ctx.arc(L * 0.55, -L * 0.15, L * 0.08, 0, 6.2832); ctx.fill();
+  ctx.restore();
+}
+
+function drawShark(s) {
+  const L = 30, wig = Math.sin(s.ph) * 0.3;
+  ctx.save();
+  ctx.translate(s.x, s.y); ctx.rotate(s.ang);
+  if (s.stun > 0) ctx.globalAlpha = 0.55;
+  ctx.fillStyle = '#6f8190';
+  ctx.beginPath(); ctx.moveTo(-L * 0.8, 0);                       // Schwanzflosse
+  ctx.lineTo(-L * 1.45, -L * 0.5 + wig * L); ctx.lineTo(-L * 1.2, wig * L * 0.5); ctx.lineTo(-L * 1.45, L * 0.5 + wig * L);
+  ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(0, 0, L, L * 0.38, 0, 0, 6.2832); ctx.fill();
+  ctx.fillStyle = '#4e5f6c';                                      // Rückenflosse
+  ctx.beginPath(); ctx.moveTo(-L * 0.1, -L * 0.3); ctx.lineTo(-L * 0.45, -L * 0.75); ctx.lineTo(-L * 0.5, -L * 0.28); ctx.fill();
+  ctx.fillStyle = '#e8eef2';                                      // Bauch
+  ctx.beginPath(); ctx.ellipse(L * 0.1, L * 0.14, L * 0.8, L * 0.17, 0, 0, 6.2832); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(L * 0.62, -L * 0.08, 3.4, 0, 6.2832); ctx.fill();
+  ctx.fillStyle = '#c00'; ctx.beginPath(); ctx.arc(L * 0.65, -L * 0.08, 1.8, 0, 6.2832); ctx.fill();
+  ctx.restore();
+}
+
+function text(str, x, y, size, color = '#fff', align = 'center', weight = '700') {
+  ctx.font = weight + ' ' + size + 'px system-ui, sans-serif';
+  ctx.textAlign = align; ctx.fillStyle = color;
+  ctx.fillText(str, x, y);
+}
+
+function draw() {
+  // Wasser
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#1583ad'); g.addColorStop(1, '#073a54');
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  // Sicherheitszonen (Sand)
+  for (const [x0, goal] of [[0, dir === -1], [W - SAFE, dir === 1]]) {
+    ctx.fillStyle = goal ? 'rgba(255,224,130,.55)' : 'rgba(226,196,130,.35)';
+    ctx.fillRect(x0, 0, SAFE, H);
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.setLineDash([8, 8]); ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(SAFE, 0); ctx.lineTo(SAFE, H); ctx.moveTo(W - SAFE, 0); ctx.lineTo(W - SAFE, H); ctx.stroke();
+  ctx.setLineDash([]);
+  text(dir === 1 ? 'START' : 'ZIEL', SAFE / 2, H - 14, 14, 'rgba(255,255,255,.7)');
+  text(dir === 1 ? 'ZIEL' : 'START', W - SAFE / 2, H - 14, 14, 'rgba(255,255,255,.7)');
+
+  // Blasen
+  ctx.fillStyle = 'rgba(255,255,255,.18)';
+  for (const b of bubbles) { ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.2832); ctx.fill(); }
+
+  // Fische, Spieler, Haie
+  for (const m of minnows) if (!m.player) drawFish(m, '#9be7ff', false);
+  for (const s of sharks) drawShark(s);
+  if (player.alive) {
+    ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(player.x, player.y, 22, 0, 6.2832); ctx.stroke();
+    drawFish(player, '#ffa53b', true);
+  }
+
+  // HUD
+  const alive = minnows.length;
+  text('Runde ' + round, 16, 28, 18, '#fff', 'left');
+  text('Fische: ' + alive + '   Haie: ' + sharks.length, W / 2, 28, 16, '#d6f3ff');
+  text('Rekord: ' + best, W - 16, 28, 18, '#ffe082', 'right');
+
+  // Overlays
+  if (state === 'ready') {
+    ctx.fillStyle = 'rgba(0,20,35,.5)'; ctx.fillRect(W / 2 - 250, H / 2 - 70, 500, 140);
+    text(round === 1 ? 'Haie & Fischlein' : 'Bereit für Runde ' + round + '?', W / 2, H / 2 - 22, 34);
+    text(dir === 1 ? 'Schwimm nach rechts →' : '← Schwimm nach links', W / 2, H / 2 + 14, 20, '#ffd27a');
+    text('Leertaste oder Tippen zum Start', W / 2, H / 2 + 48, 16, '#cfe9f5', 'center', '400');
+  }
+  if (bannerT > 0 && state !== 'over') text(banner, W / 2, 90, 30, '#ffe082');
+  if (state === 'over') {
+    ctx.fillStyle = 'rgba(30,0,0,.6)'; ctx.fillRect(0, 0, W, H);
+    text('Gefressen!', W / 2, H / 2 - 40, 48, '#ff7a7a');
+    text('Geschaffte Runden: ' + (round - 1), W / 2, H / 2 + 8, 24);
+    text('Rekord: ' + best, W / 2, H / 2 + 40, 18, '#ffe082');
+    text('Leertaste oder Tippen für neues Spiel', W / 2, H / 2 + 80, 16, '#ddd', 'center', '400');
+  }
+  if (flash > 0) { ctx.fillStyle = 'rgba(255,0,0,' + flash + ')'; ctx.fillRect(0, 0, W, H); }
+}
+
+// ---------- Loop ----------
+for (let i = 0; i < 30; i++) bubbles.push({ x: rand(0, W), y: rand(0, H), r: rand(2, 5), v: rand(15, 45) });
+newGame();
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);   // große Pausen (Tab-Wechsel) abfangen
+  last = now;
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// Für automatisierte Tests
+window.__game = { get state() { return state; }, get round() { return round; }, action };
+})();
+</script>
+</body>
+</html>
