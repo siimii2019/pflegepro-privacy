@@ -39,7 +39,7 @@
 <div id="ov">
   <h1 id="ovT">POOLROOMS</h1>
   <p id="ovP">Nachts im leeren Schwimmzentrum. Du bist allein. Nur wenige Lampen summen noch, und jede Tür führt zurück ins Wasser.<br>
-     Schwimm <b>zehn Bahnen</b>, dann ist der Ausgang offen. Im Becken ist etwas Großes. Draußen kannst du danach frei herumlaufen. Hinter der grünen Tür im Flur beginnt ein <b>endloser Trakt</b>. In den <b>Kojen</b> kannst du schlafen (E), und vom <b>Sprungturm</b> siehst du den Hai von oben.</p>
+     Schwimm <b>zehn Bahnen</b>, dann ist der Ausgang offen. Im Becken ist etwas Großes. Draußen kannst du danach frei herumlaufen. Hinter der grünen Tür im Flur beginnt ein <b>endloser Poolrooms-Trakt</b> aus gefluteten Hallen. In den <b>Kojen</b> kannst du schlafen (E), und vom <b>Sprungturm</b> siehst du den Hai von oben.</p>
   <p id="ovH"><b>WASD</b> bewegen · <b>Maus</b> umsehen · <b>Shift</b> sprinten (im Wasser teuer und laut) · <b>F</b> Taschenlampe · <b>Esc</b> Pause<br>
      Schwimmen kostet Ausdauer. Such <b>orange Getränke</b> in Umkleiden, Duschen und Flur. An Land erholst du dich langsam.</p>
   <div class="go" id="go">Klicken zum Starten</div>
@@ -47,6 +47,7 @@
 <div id="err">WebGL wird von diesem Browser nicht unterstützt.</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="shark_mesh.js"></script>
 <script>
 (() => {
 'use strict';
@@ -144,7 +145,9 @@ const T = {
 };
 const ceilMat = lamb(tileTex('#f2f6f2', '#c3ccc8'));
 T.bunk = theme('#c9c4b2', '#9a9684', '#7a6a58', '#4f4438');
+T.pool = theme('#b8e6e8', '#7eb4b9', '#9fd6da', '#62a4aa');   // blasse Poolrooms-Fliesen
 const darkCeil = lamb(tileTex('#222629', '#15191b'));
+const poolCeil = lamb(tileTex('#cfe8ea', '#9fc3c6'));
 const grayMat = new THREE.MeshLambertMaterial({ color: 0x8e9aa0 });
 const woodMat = new THREE.MeshLambertMaterial({ color: 0xb98f5a });
 const panelMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -645,23 +648,40 @@ const supplies = [];
 }
 
 // ================= Hai =================
-function makeShark(bas) {
-  const g = new THREE.Group();
-  const eyes = [];
-  const mat = new THREE.MeshLambertMaterial({ color: 0x4b5963 });
-  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), mat); body.scale.set(0.9, 0.8, 2.7); g.add(body);
-  const belly = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshLambertMaterial({ color: 0xd9e3e8 }));
-  belly.scale.set(0.8, 0.5, 2.5); belly.position.y = -0.35; g.add(belly);
-  const tail = new THREE.Group(); tail.position.z = -2.6; g.add(tail);
-  const tc = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.8, 10), mat); tc.rotation.x = -Math.PI / 2; tc.position.z = -0.8; tail.add(tc);
-  const tf = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.1, 4), mat); tf.position.set(0, 0.2, -1.6); tail.add(tf);
-  const fin = new THREE.Mesh(new THREE.ConeGeometry(0.38, 1.5, 4), new THREE.MeshLambertMaterial({ color: 0x3a464f }));
-  fin.position.set(0, 0.95, 0.2); fin.rotation.x = -0.25; g.add(fin);
-  for (const dx of [-0.55, 0.55]) {
-    const e = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff2a2a })); e.position.set(dx, 0.15, 2.0); e.visible = false; g.add(e); eyes.push(e);
+// Hai-Modell (in Blender per tools/make_shark.py erzeugt): quantisierte Arrays -> BufferGeometry
+function b64(str) { const bin = atob(str), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; }
+function geoFrom(d) {
+  const P = new Int16Array(b64(d.p).buffer), N = new Int8Array(b64(d.nm).buffer), C = b64(d.c), I = new Uint16Array(b64(d.i).buffer);
+  const pos = new Float32Array(P.length), nor = new Float32Array(N.length), col = new Float32Array(C.length);
+  for (let i = 0; i < P.length; i++) pos[i] = P[i] * d.s;
+  for (let i = 0; i < N.length; i++) nor[i] = N[i] / 127;
+  for (let i = 0; i < C.length; i++) col[i] = C[i] / 255;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setIndex(new THREE.BufferAttribute(I, 1));
+  return g;
+}
+let sharkGeo = null;
+const sharkMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+function makeShark(bas, obst) {
+  const g = new THREE.Group(); g.rotation.order = 'YXZ';
+  const eyes = []; let tail;
+  const SM = window.SHARK_MESH;
+  if (SM) {
+    if (!sharkGeo) sharkGeo = { body: geoFrom(SM.body), tail: geoFrom(SM.tail) };
+    g.add(new THREE.Mesh(sharkGeo.body, sharkMat));
+    tail = new THREE.Group(); tail.position.z = SM.pivot; tail.add(new THREE.Mesh(sharkGeo.tail, sharkMat)); g.add(tail);
+    for (const [ex, ey, ez] of SM.eyes) {
+      const dead = new THREE.Mesh(new THREE.SphereGeometry(0.07, 8, 8), new THREE.MeshBasicMaterial({ color: 0x050505 })); dead.position.set(ex, ey, ez); g.add(dead);
+      const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), new THREE.MeshBasicMaterial({ color: 0xff2a2a })); e.position.set(ex * 1.02, ey, ez); e.visible = false; g.add(e); eyes.push(e);
+    }
+  } else {                                   // Notlösung, falls shark_mesh.js fehlt
+    const m = new THREE.MeshLambertMaterial({ color: 0x10161a });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), m); body.scale.set(0.9, 0.8, 3.2); g.add(body);
+    tail = new THREE.Group(); tail.position.z = -2.6; g.add(tail);
   }
-  g.position.y = -0.9; scene.add(g);
-  return { g, tail, eyes, bas, bx1: bas.x1 + 0.7, bx2: bas.x2 - 0.7, bz1: bas.z1 + 0.8, bz2: bas.z2 - 0.8,
+  g.position.y = -1.1; scene.add(g);
+  return { g, tail, eyes, bas, obst: obst || [], pitch: 0, bx1: bas.x1 + 0.7, bx2: bas.x2 - 0.7, bz1: bas.z1 + 0.8, bz2: bas.z2 - 0.8,
            x: (bas.x1 + bas.x2) / 2, z: (bas.z1 + bas.z2) / 2, ang: 0, alert: 0, lx: 0, lz: 0, wx: 0, wz: 0, wt: 0, ph: 0, mode: 'wander' };
 }
 const shark = makeShark(mainBasin);
@@ -838,9 +858,11 @@ function updateShark(s, dt) {
   const step = (Math.hypot(tx - s.x, tz - s.z) < 0.6 ? 0 : speed) * dt;
   s.x = clamp(s.x + Math.sin(s.ang) * step, s.bx1, s.bx2);
   s.z = clamp(s.z + Math.cos(s.ang) * step, s.bz1, s.bz2);
+  for (const o of s.obst) { const ox = s.x - o.x, oz = s.z - o.z, od = Math.hypot(ox, oz), mn = o.r + 1.5; if (od < mn && od > 0.001) { s.x = o.x + ox / od * mn; s.z = o.z + oz / od * mn; } }
   s.ph += dt * (3 + speed * 1.5);
-  s.g.position.set(s.x, -0.9 + Math.sin(s.ph * 0.5) * 0.04, s.z);
-  s.g.rotation.y = s.ang; s.tail.rotation.y = Math.sin(s.ph) * 0.45;
+  s.g.position.set(s.x, -1.1 + Math.sin(s.ph * 0.5) * 0.05, s.z);
+  s.pitch += ((hunting ? -0.3 : 0) - s.pitch) * Math.min(1, dt * 3);       // beim Jagen hebt er den Kopf: Zähne sichtbar
+  s.g.rotation.y = s.ang; s.g.rotation.x = s.pitch; s.tail.rotation.y = Math.sin(s.ph) * 0.4;
   return dist;
 }
 
@@ -862,7 +884,7 @@ const ZONES = {
   flur:   { c: new THREE.Color(0x0e0c07), d: 0.045 },
   out:    { c: new THREE.Color(0x03050a), d: 0.02 },
   bunk:   { c: new THREE.Color(0x0c0907), d: 0.05 },
-  endless:{ c: new THREE.Color(0x0b0a06), d: 0.05 },
+  endless:{ c: new THREE.Color(0x0a1d22), d: 0.04 },
 };
 
 function teleportToPool() {
@@ -905,7 +927,7 @@ function rng(i, j) {
 const ctype = (i, j) => {
   if (i === 0 && j === 0) return 'start';
   const r = hash(i, j, 7);
-  return r < 0.22 ? 'pool' : r < 0.42 ? 'locker' : r < 0.62 ? 'bunks' : r < 0.78 ? 'shower' : 'pillars';
+  return r < 0.26 ? 'hall' : r < 0.40 ? 'pool' : r < 0.54 ? 'locker' : r < 0.68 ? 'bunks' : r < 0.80 ? 'shower' : 'pillars';
 };
 function hasDoor(kind, i, j) {
   const a = kind === 'N' ? [i, j - 1] : [i - 1, j];
@@ -923,17 +945,29 @@ function makeSupply(x, z, id) {
   const s = { g, x, z, taken: false, id }; esupplies.push(s); return s;
 }
 
+// Torbogen über der Türlücke (Poolrooms-Look)
+function arch(cx, cz, alongX, th) {
+  const sh = new THREE.Shape();
+  sh.moveTo(-1.5, 2.5); sh.quadraticCurveTo(0, 4.1, 1.5, 2.5); sh.lineTo(1.5, EH); sh.lineTo(-1.5, EH); sh.closePath();
+  const geo = new THREE.ExtrudeGeometry(sh, { depth: 0.3, bevelEnabled: false, curveSegments: 10 });
+  scalePlaneUV(geo, 0.5, 0.5);
+  const m = new THREE.Mesh(geo, th.wall);
+  if (alongX) m.position.set(cx, DECK, cz - 0.15);
+  else { m.rotation.y = -Math.PI / 2; m.position.set(cx + 0.15, DECK, cz); }
+  scene.add(m);
+}
+
 function buildChunk(i, j) {
   const ch = { i, j, group: new THREE.Group() };
   const X0 = EX + i * CH, Z0 = EZ + j * CH, type = ctype(i, j), r = rng(i, j);
-  const th = type === 'pool' ? T.hall : [T.a, T.b, T.flur, T.shower, T.bunk][Math.floor(r() * 5)];
+  const th = (type === 'pool' || type === 'hall' || type === 'pillars') ? T.pool : type === 'shower' ? T.shower : [T.a, T.b, T.flur, T.bunk][Math.floor(r() * 4)];
   const c0 = cols.length, l0 = lamps.length, b0 = beds.length, s0 = sharks.length, a0 = basins.length, u0 = esupplies.length;
   scene.add = function (...o) { ch.group.add(...o); return this; };     // alles landet in der Chunk-Gruppe
   try {
     const wl = (x1, z1, x2, z2) => wall(x1, z1, x2, z2, EH, th);
-    if (hasDoor('N', i, j)) { const d = doorPos('N', i, j); wl(X0, Z0, X0 + d, Z0); wl(X0 + d + 3, Z0, X0 + CH, Z0); box(X0 + d, Z0 - 0.15, X0 + d + 3, Z0 + 0.15, DECK + 2.5, EH - 2.5, th.wall, false); }
+    if (hasDoor('N', i, j)) { const d = doorPos('N', i, j); wl(X0, Z0, X0 + d, Z0); wl(X0 + d + 3, Z0, X0 + CH, Z0); arch(X0 + d + 1.5, Z0, true, th); }
     else wl(X0, Z0, X0 + CH, Z0);
-    if (hasDoor('W', i, j)) { const d = doorPos('W', i, j); wl(X0, Z0, X0, Z0 + d); wl(X0, Z0 + d + 3, X0, Z0 + CH); box(X0 - 0.15, Z0 + d, X0 + 0.15, Z0 + d + 3, DECK + 2.5, EH - 2.5, th.wall, false); }
+    if (hasDoor('W', i, j)) { const d = doorPos('W', i, j); wl(X0, Z0, X0, Z0 + d); wl(X0, Z0 + d + 3, X0, Z0 + CH); arch(X0, Z0 + d + 1.5, false, th); }
     else wl(X0, Z0, X0, Z0 + CH);
 
     const spawnSup = (x, zMin, zMax) => {
@@ -945,13 +979,13 @@ function buildChunk(i, j) {
       lamps.push({ x: X0 + 20, y: DECK + 3.0, z: Z0 + 20, color: 0xe9f4ff, I: 2.6, d: 20 });
     };
 
-    if (type === 'pool') {
-      const bx1 = X0 + 8, bx2 = X0 + 22, bz1 = Z0 + 5, bz2 = Z0 + 25;
+    // Becken samt Rand, Wänden und Wasser; liefert das Becken-Objekt
+    const buildBasin = (bx1, bx2, bz1, bz2) => {
       const bas = { x1: bx1, x2: bx2, z1: bz1, z2: bz2 }; basins.push(bas);
       flat(X0, Z0, bx1, Z0 + CH, DECK, th.floor, true); flat(bx2, Z0, X0 + CH, Z0 + CH, DECK, th.floor, true);
       flat(bx1, Z0, bx2, bz1, DECK, th.floor, true); flat(bx1, bz2, bx2, Z0 + CH, DECK, th.floor, true);
       flat(bx1, bz1, bx2, bz2, BASIN.floor, th.floor, true);
-      flat(X0, Z0, X0 + CH, Z0 + CH, DECK + EH, darkCeil, false, 1.5);
+      flat(X0, Z0, X0 + CH, Z0 + CH, DECK + EH, poolCeil, false, 1.5);
       const bh = DECK - BASIN.floor, bm = (DECK + BASIN.floor) / 2;
       const mk = (len, x, z, ry) => { const g = new THREE.PlaneGeometry(len, bh); scalePlaneUV(g, len / 2, bh / 2); const m = new THREE.Mesh(g, basinWallMat); m.position.set(x, bm, z); m.rotation.y = ry; scene.add(m); };
       mk(bz2 - bz1, bx1, (bz1 + bz2) / 2, Math.PI / 2); mk(bz2 - bz1, bx2, (bz1 + bz2) / 2, Math.PI / 2);
@@ -959,12 +993,32 @@ function buildChunk(i, j) {
       const w = new THREE.Mesh(new THREE.PlaneGeometry(bx2 - bx1, bz2 - bz1),
         new THREE.MeshBasicMaterial({ map: waveTex, color: 0x1fc8b6, transparent: true, opacity: 0.62, depthWrite: false }));
       w.rotation.x = -Math.PI / 2; w.position.set((bx1 + bx2) / 2, 0, (bz1 + bz2) / 2); scene.add(w);
+      return bas;
+    };
+    if (type === 'pool') {
+      const bx1 = X0 + 8, bx2 = X0 + 22, bz1 = Z0 + 5, bz2 = Z0 + 25;
+      const bas = buildBasin(bx1, bx2, bz1, bz2);
       for (const bxp of [10, 20]) for (const bzp of [8, 22]) { const b = new THREE.Mesh(new THREE.SphereGeometry(0.12, 8, 6), bulbGlobal); b.position.set(X0 + bxp, DECK + EH - 0.4, Z0 + bzp); scene.add(b); }
       lamps.push({ x: (bx1 + bx2) / 2, y: -1.6, z: bz1 + 5, color: 0x20d6c4, I: 2.4, d: 14 });
       lamps.push({ x: (bx1 + bx2) / 2, y: -1.6, z: bz2 - 5, color: 0x20d6c4, I: 2.4, d: 14 });
-      lamps.push({ x: X0 + 15, y: DECK + 3.0, z: Z0 + 15, color: 0xfff2e0, I: 1.2, d: 18 });
+      lamps.push({ x: X0 + 15, y: DECK + 3.0, z: Z0 + 15, color: 0xdff6f8, I: 1.2, d: 18 });
       if (r() < 0.8) { const sh = makeShark(bas); sh.x = bx1 + 1 + r() * (bx2 - bx1 - 2); sh.z = bz1 + 1 + r() * (bz2 - bz1 - 2); sharks.push(sh); }
       spawnSup(X0 + 4, Z0 + 4, Z0 + 26);
+    } else if (type === 'hall') {          // geflutete Halle mit Säulen im Wasser (Poolrooms)
+      const obst = [];
+      for (const a of [9, 15, 21]) for (const b of [9, 15, 21]) {
+        box(X0 + a - 0.6, Z0 + b - 0.6, X0 + a + 0.6, Z0 + b + 0.6, BASIN.floor, DECK + EH - BASIN.floor, th.wall, true);
+        obst.push({ x: X0 + a, z: Z0 + b, r: 0.6 });
+      }
+      const bas = buildBasin(X0 + 3, X0 + 27, Z0 + 3, Z0 + 27);
+      panels(X0, Z0, X0 + CH, Z0 + CH, DECK + EH, 6);
+      lamps.push({ x: X0 + 9, y: -1.6, z: Z0 + 9, color: 0x20d6c4, I: 2.6, d: 15 });
+      lamps.push({ x: X0 + 21, y: -1.6, z: Z0 + 21, color: 0x20d6c4, I: 2.6, d: 15 });
+      lamps.push({ x: X0 + 15, y: -1.6, z: Z0 + 15, color: 0x20d6c4, I: 2.2, d: 15 });
+      lamps.push({ x: X0 + 15, y: DECK + 3.2, z: Z0 + 15, color: 0xdff6f8, I: 1.4, d: 22 });
+      const ns = r() < 0.4 ? 2 : 1;
+      for (let k = 0; k < ns; k++) { const sh = makeShark(bas, obst); sh.x = X0 + 5 + r() * 20; sh.z = Z0 + 5 + r() * 20; sharks.push(sh); }
+      spawnSup(X0 + 1.5, Z0 + 4, Z0 + 26);
     } else {
       flat(X0, Z0, X0 + CH, Z0 + CH, DECK, th.floor, true);
       flat(X0, Z0, X0 + CH, Z0 + CH, DECK + EH, ceilMat, false, 1.5);
