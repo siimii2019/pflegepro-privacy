@@ -48,6 +48,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="shark_mesh.js"></script>
+<script src="props_mesh.js"></script>
 <script>
 (() => {
 'use strict';
@@ -64,6 +65,9 @@ const DECK = 0.3;                 // Höhe von Boden/Beckenrand über Wasser (Wa
 const BASIN = { x: 7, z: 18, floor: -2.4 };       // halbe Beckenmaße
 const mainBasin = { x1: -BASIN.x, x2: BASIN.x, z1: -BASIN.z, z2: BASIN.z };
 const basins = [mainBasin];
+const floaters = [], slides = [];
+const propGeo = {};
+let slideBasin = null; const slideObst = [];
 const supports = [];            // begehbare Höhen: Rampen, Plattformen
 const LAPS = 10;
 const SWIM = 2.0, SWIM_SPRINT = 3.6, WALK = 3.2, RUN = 5.0;
@@ -107,8 +111,11 @@ flash.position.set(0.15, -0.1, 0); camera.add(flash);
 const flashT = new THREE.Object3D(); flashT.position.set(0, 0, -1); camera.add(flashT); flash.target = flashT;
 let flashOn = true;
 // Wenige, schwache Neonlichter in den Räumen (flackern mit den Deckenlampen)
+// Lampen: alle Lichtquellen sind Datensätze; nur die nächsten POOL_N werden als echte Lichter gesetzt (konstante Shader-Kosten)
 const indoorLights = [];
-const addL = (x, y, z, color, I, d) => { const l = new THREE.PointLight(color, I, d, 2); l.position.set(x, y, z); l.userData.base = I; l.userData.orig = { x, y, z, color, I, d }; scene.add(l); indoorLights.push(l); };
+const lamps = [];
+const addL = (x, y, z, color, I, d) => { lamps.push({ x, y, z, color, I, d }); };
+for (let k = 0; k < 11; k++) { const l = new THREE.PointLight(0xffffff, 0, 20, 2); l.userData.base = 0; l.position.set(0, -50, 0); scene.add(l); indoorLights.push(l); }
 // Halle: drei Hängelampen + türkises Unterwasserlicht (Hauptlichtquelle wie im Vorbild)
 [-15, 0, 15].forEach(z => addL(0, DECK + 5.0, z, 0xfff2e0, 1.1, 15));
 [-12, 0, 12].forEach(z => addL(0, -1.6, z, 0x20d6c4, 2.4, 14));
@@ -154,6 +161,10 @@ const panelMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 const deadMat = new THREE.MeshBasicMaterial({ color: 0x252c30 });
 const bulbGlobal = new THREE.MeshBasicMaterial({ color: 0xfff4dc });
 const basinWallMat = new THREE.MeshLambertMaterial({ map: T.hall.wall.map, side: THREE.DoubleSide });
+const propMats = [new THREE.MeshLambertMaterial({ vertexColors: true }), new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }),
+                  new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.82, depthWrite: false })];
+const railMat = new THREE.MeshLambertMaterial({ color: 0x9fb4bb, transparent: true, opacity: 0.35 });
+const stepMat = new THREE.MeshLambertMaterial({ color: 0x9aa3a7 });
 
 function scaleFaceUV(geo, face, su, sv) {
   const uv = geo.attributes.uv;
@@ -170,6 +181,59 @@ function scalePlaneUV(geo, su, sv) {
 const cols = [];
 function addCol(x1, z1, x2, z2, top) { const c = { x1: Math.min(x1, x2), z1: Math.min(z1, z2), x2: Math.max(x1, x2), z2: Math.max(z1, z2) }; if (top !== undefined) c.top = top; cols.push(c); }
 function addSupport(x1, z1, x2, z2, h0, h1, axis) { supports.push({ x1, z1, x2, z2, h0, h1, axis }); }
+
+// ---- Requisiten (in Blender modelliert: tools/make_props.py) ----
+function prop(name, x, y, z, rotY = 0, scale = 1) {
+  const PR = window.PROPS && window.PROPS[name], g = new THREE.Group();
+  if (PR) { if (!propGeo[name]) propGeo[name] = PR.parts.map(geoFrom); PR.parts.forEach((pt, k) => g.add(new THREE.Mesh(propGeo[name][k], propMats[pt.m]))); }
+  g.position.set(x, y, z); g.rotation.y = rotY; g.scale.setScalar(scale); scene.add(g); return g;
+}
+function floater(name, x, z, rotY, scale) {          // schwimmt auf dem Wasser und schaukelt
+  const off = ({ duck: -0.12, ring: -0.05, ball: -0.32 })[name] || 0.0;
+  const g = prop(name, x, off * scale, z, rotY, scale);
+  const f = { g, base: off * scale, ph: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.12 };
+  floaters.push(f); return f;
+}
+function basinGeom(bx1, bx2, bz1, bz2) {              // Becken (Boden, Wände, Wasser); der Rand wird vom Aufrufer gelegt
+  const bas = { x1: bx1, x2: bx2, z1: bz1, z2: bz2 }; basins.push(bas);
+  flat(bx1, bz1, bx2, bz2, BASIN.floor, T.pool.floor, true);
+  const bh = DECK - BASIN.floor, bm = (DECK + BASIN.floor) / 2;
+  const mk = (len, x, z, ry) => { const g = new THREE.PlaneGeometry(len, bh); scalePlaneUV(g, len / 2, bh / 2); const m = new THREE.Mesh(g, basinWallMat); m.position.set(x, bm, z); m.rotation.y = ry; scene.add(m); };
+  mk(bz2 - bz1, bx1, (bz1 + bz2) / 2, Math.PI / 2); mk(bz2 - bz1, bx2, (bz1 + bz2) / 2, Math.PI / 2);
+  mk(bx2 - bx1, (bx1 + bx2) / 2, bz1, 0); mk(bx2 - bx1, (bx1 + bx2) / 2, bz2, 0);
+  const w = new THREE.Mesh(new THREE.PlaneGeometry(bx2 - bx1, bz2 - bz1),
+    new THREE.MeshBasicMaterial({ map: waveTex, color: 0x1fc8b6, transparent: true, opacity: 0.62, depthWrite: false }));
+  w.rotation.x = -Math.PI / 2; w.position.set((bx1 + bx2) / 2, 0, (bz1 + bz2) / 2); scene.add(w);
+  return bas;
+}
+// Rutschenturm: Treppe, Plattform, Geländer-Kollision, Fahrpfad (rot = 0: Treppe nach +x, rot = PI: nach -x)
+function buildSlide(ox, oz, rot) {
+  const sgn = rot === 0 ? 1 : -1, TH = 4.2, N = 14, run = 7.0;
+  prop('slide', ox, DECK, oz, rot);
+  const PR = window.PROPS && window.PROPS.slide, c = Math.cos(rot), s = Math.sin(rot);
+  const path = ((PR && PR.meta.path) || []).map(([x, y, z]) => ({ x: ox + x * c + z * s, y: DECK + y, z: oz - x * s + z * c }));
+  const cum = [0];
+  for (let k = 1; k < path.length; k++) cum.push(cum[k - 1] + Math.hypot(path[k].x - path[k - 1].x, path[k].y - path[k - 1].y, path[k].z - path[k - 1].z));
+  const xa = ox + sgn * 1.8, xb = ox + sgn * (1.8 + run);
+  if (sgn === 1) addSupport(xa, oz - 0.8, xb, oz + 0.8, DECK + TH, DECK, 'x'); else addSupport(xb, oz - 0.8, xa, oz + 0.8, DECK, DECK + TH, 'x');
+  addSupport(ox - 1.8, oz - 1.8, ox + 1.8, oz + 1.8, DECK + TH, DECK + TH, 'x');
+  for (let k = 0; k < N; k++) {
+    const d0 = 1.8 + k * run / N, d1 = 1.8 + (k + 1) * run / N, top = DECK + TH * (1 - ((d0 + d1) / 2 - 1.8) / run);
+    box(Math.min(ox + sgn * d0, ox + sgn * d1), oz - 0.8, Math.max(ox + sgn * d0, ox + sgn * d1), oz + 0.8, DECK, top - DECK, stepMat, false);
+  }
+  const ang = Math.atan2(TH, run), len = Math.hypot(run, TH);
+  for (const dz of [-0.9, 0.9]) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(len, 1.0, 0.05), railMat);
+    m.position.set(ox + sgn * (1.8 + run / 2), DECK + TH / 2 + 0.5, oz + dz); m.rotation.z = sgn === 1 ? -ang : ang; scene.add(m);
+    addCol(Math.min(xa, xb), oz + dz - 0.05, Math.max(xa, xb), oz + dz + 0.05);
+  }
+  addCol(ox + sgn * 1.75, oz - 1.8, ox + sgn * 1.85, oz - 0.85); addCol(ox + sgn * 1.75, oz + 0.85, ox + sgn * 1.85, oz + 1.8);   // Rampenseite
+  addCol(ox - sgn * 1.85, oz - 1.8, ox - sgn * 1.75, oz + 1.8);                                                                  // Röhrenseite (nur per E)
+  addCol(ox - 1.8, oz - 1.85, ox + 1.8, oz - 1.75); addCol(ox - 1.8, oz + 1.75, ox + 1.8, oz + 1.85);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) addCol(ox + sx * 1.55, oz + sz * 1.55, ox + sx * 1.75, oz + sz * 1.75);
+  slides.push({ sx: ox - sgn * 1.2, sz: oz, y: DECK + TH, path, cum });
+}
+
 
 // Quader mit gekachelter Textur; y0/h in Weltkoordinaten
 function box(x1, z1, x2, z2, y0, h, mat, collide = true, tile = 2) {
@@ -279,7 +343,8 @@ water.rotation.x = -Math.PI / 2; scene.add(water);
 wall(-HX, -HZ, HX, -HZ, HALL_H, T.hall);
 wall(-HX, -HZ, -HX, -6, HALL_H, T.hall); wall(-HX, -3, -HX, 10, HALL_H, T.hall); wall(-HX, 13, -HX, HZ, HALL_H, T.hall);
 box(-HX - 0.15, 10, -HX + 0.15, 13, DECK + 2.4, HALL_H - 2.4, T.hall.wall, false);   // Sturz über der Schlafsaal-Tür
-wall(HX, -HZ, HX, 3, HALL_H, T.hall);    wall(HX, 6, HX, HZ, HALL_H, T.hall);
+wall(HX, -HZ, HX, -10, HALL_H, T.hall); wall(HX, -7, HX, 3, HALL_H, T.hall); wall(HX, 6, HX, HZ, HALL_H, T.hall);
+box(HX - 0.15, -10, HX + 0.15, -7, DECK + 2.4, HALL_H - 2.4, T.hall.wall, false);   // Sturz über der Tür zur Rutschenhalle
 wall(-20, HZ, -1.5, HZ, HALL_H, T.hall); wall(1.5, HZ, 20, HZ, HALL_H, T.hall);
 
 // Fenster (Herbstabend)
@@ -497,6 +562,28 @@ addL(-22, DECK + 3.0, 12, 0xffd9a8, 2.6, 18);
   sg.position.set(-12, DECK + 2.4, 31.74); sg.rotation.y = Math.PI; scene.add(sg);
 }
 
+// ---- Rutschenhalle (Ost, Tür in der Halle bei z -10..-7): zwei Rutschen, Riesenenten, Ringe ----
+{
+  const RH = HALL_H;
+  wall(14, -24, 56, -24, RH, T.pool); wall(56, -24, 56, -2, RH, T.pool); wall(30, -2, 56, -2, RH, T.pool);
+  box(14, -2.15, 30, -1.85, DECK + ROOM_H, RH - ROOM_H, T.pool.wall, false);          // Aufsatz über der niedrigeren Umkleidewand
+  slideBasin = basinGeom(28.5, 42, -18, -6);
+  flat(14, -24, 28.5, -2, DECK, T.pool.floor, true); flat(42, -24, 56, -2, DECK, T.pool.floor, true);
+  flat(28.5, -24, 42, -18, DECK, T.pool.floor, true); flat(28.5, -6, 42, -2, DECK, T.pool.floor, true);
+  flat(14, -24, 56, -2, DECK + RH, poolCeil, false, 1.5); panels(14, -24, 56, -2, DECK + RH, 6);
+  buildSlide(29.5, -21, 0); buildSlide(40.5, -4.2, Math.PI);
+  const duck = (x, z, sc) => { floater('duck', x, z, Math.random() * 6.28, sc); addCol(x - 1.15 * sc, z - 1.15 * sc, x + 1.15 * sc, z + 1.15 * sc); slideObst.push({ x, z, r: 1.3 * sc }); };
+  duck(34.5, -8.5, 1.5); duck(37.5, -15.5, 1.5);
+  floater('ring', 31.5, -15.5, 0, 1.3); floater('ring', 40, -9, 1, 1.2); floater('ring', 35.5, -12.4, 2, 1.0);
+  floater('ball', 30, -8, 0, 1.0); floater('ball', 41, -16.5, 0, 0.9);
+  ['noodleB', 'noodleP', 'noodleG', 'noodleB'].forEach((n, k) => floater(n, 31 + k * 3.2, -17 + (k % 2) * 9.5, k, 1.3));
+  for (const lz of [-21, -17, -13]) { prop('lounger', 53.5, DECK, lz, Math.PI / 2, 1.0); addCol(52.4, lz - 0.45, 54.6, lz + 0.45); }
+  prop('lifeguard', 47, DECK, -21.5, Math.PI, 1.0); addCol(45.9, -22.6, 48.1, -20.4);
+  prop('lounger', 17, DECK, -21, 0, 1.0); addCol(16.6, -22.1, 17.4, -19.9); prop('ball', 19, DECK, -17, 0, 0.6);
+  addL(33, -1.6, -12, 0x20d6c4, 2.6, 15); addL(38, -1.6, -12, 0x20d6c4, 2.6, 15);
+  addL(35, DECK + 3.2, -12, 0xfff2e0, 1.8, 24); addL(21, DECK + 3.2, -12, 0xdff6f8, 1.6, 20); addL(50, DECK + 3.2, -10, 0xdff6f8, 1.6, 20);
+}
+
 // ---- Ausgänge ----
 function signTex(text, bg, fg) {
   const c = document.createElement('canvas'); c.width = 256; c.height = 64;
@@ -566,8 +653,9 @@ const asphaltMat = (() => {
   flat(19.8, 24.5, 22, 31.5, DECK - 0.005, concreteMat, true, 2);
   // Dächer, damit man von außen nicht ins Gebäude sieht
   flat(-HX, -HZ, HX, HZ, DECK + HALL_H + 0.02, roofMat, true, 3);
-  for (const r of [[-30, -14, -14, 2], [14, -2, 30, 14], [-20, 24, 20, 32], [-34, 22, -20, 34]])
+  for (const r of [[-30, -14, -14, 2], [14, -2, 30, 14], [-20, 24, 20, 32], [-34, 22, -20, 34], [-30, 4, -14, 20]])
     flat(r[0], r[1], r[2], r[3], DECK + ROOM_H + 0.02, roofMat, true, 3);
+  flat(14, -24, 56, -2, DECK + HALL_H + 0.02, roofMat, true, 3);
 
   // Zaun (halbtransparent) = Spielfeldgrenze
   const fenceMat = new THREE.MeshLambertMaterial({ color: 0x7d878c, transparent: true, opacity: 0.45 });
@@ -600,7 +688,7 @@ const asphaltMat = (() => {
   // Herbstbäume
   const trunkMat = new THREE.MeshLambertMaterial({ color: 0x15110e });
   [[-40, -10], [-45, 12], [-42, 40], [-30, 46], [-15, 42], [0, 46], [10, 50], [-55, 26], [-50, -32], [-20, -36],
-   [10, -36], [35, -32], [50, -12], [60, 4], [65, 36], [40, 62], [-5, 60]].forEach(([x, z]) => {
+   [10, -36], [35, -32], [60, 4], [65, 36], [40, 62], [-5, 60]].forEach(([x, z]) => {
     const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.32, 3.2, 8), trunkMat); tr.position.set(x, DECK + 1.6, z); scene.add(tr);
     for (let k = 0; k < 8; k++) {
       const L = rand(1.8, 3.4);
@@ -686,11 +774,12 @@ function makeShark(bas, obst) {
 }
 const shark = makeShark(mainBasin);
 const sharks = [shark];
+if (slideBasin) sharks.push(makeShark(slideBasin, slideObst));
 
 // ================= Spielzustand =================
 const player = { x: 0, z: -21, yaw: Math.PI, pitch: 0, stamina: 1, eye: EYE_DECK, bob: 0, inWater: false, moving: false, sprinting: false, regenDelay: 0, drown: 0,
-                 fy: DECK, vy: 0, falling: false, fallFrom: 0, basin: null, eyeOff: 1.65 };
-let checkpoint = null, sleepT = 0, sleepSaved = false, nearBed = null;
+                 fy: DECK, vy: 0, falling: false, fallFrom: 0, basin: null, eyeOff: 1.65, pushX: 0, pushZ: 0, rideRoll: 0 };
+let checkpoint = null, sleepT = 0, sleepSaved = false, nearBed = null, ride = null, nearSlide = null;
 let state = 'menu';            // menu | play | paused | over
 let laps = 0, target = 'S', finished = false, runTime = 0, escaped = false;
 let msgT = 0, heartT = 0, eventT = 8, dripT = 4, dimT = 0;
@@ -703,7 +792,7 @@ function showMsg(t, dur = 2.6) { $('msg').textContent = t; $('msg').style.opacit
 
 function resetGame() {
   laps = 0; target = 'S'; finished = false; runTime = 0; dimT = 0; escaped = false;
-  clearChunks(); takenSup.clear(); restoreLamps(); checkpoint = null; sleepT = 0;
+  clearChunks(); takenSup.clear(); checkpoint = null; sleepT = 0; ride = null;
   Object.assign(player, { x: 0, z: -21, yaw: Math.PI, pitch: 0, stamina: 1, eye: EYE_DECK, inWater: false, drown: 0, regenDelay: 0, fy: DECK, vy: 0, falling: false, basin: null, eyeOff: 1.65 });
   for (const s of supplies) { s.taken = false; s.g.visible = true; }
   Object.assign(shark, { x: 0, z: 10, ang: Math.PI, alert: 0, mode: 'wander', wt: 0 });
@@ -718,13 +807,13 @@ addEventListener('keydown', e => {
   keys[e.code] = true;
   if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
   if (e.code === 'KeyF') flashOn = !flashOn;
-  if (e.code === 'KeyE' && state === 'play' && sleepT <= 0 && nearBed && !player.inWater) startSleep();
+  if (e.code === 'KeyE' && state === 'play' && sleepT <= 0 && !ride) { if (nearSlide) startRide(nearSlide); else if (nearBed && !player.inWater) startSleep(); }
   if (e.code === 'KeyR') { if (state === 'over') { checkpoint = null; begin(); } else if (escaped && state === 'play') { checkpoint = null; resetGame(); } }
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 document.addEventListener('mousemove', e => {
-  if (document.pointerLockElement !== canvas || state !== 'play') return;
+  if (document.pointerLockElement !== canvas || state !== 'play' || ride) return;
   player.yaw -= e.movementX * 0.0022;
   player.pitch = clamp(player.pitch - e.movementY * 0.0022, -1.3, 1.3);
 });
@@ -869,6 +958,7 @@ function updateShark(s, dt) {
 function zoneAt(x, z) {
   if (x > 2000) return 'endless';
   if (Math.abs(x) < HX + 0.2 && Math.abs(z) < HZ + 0.2) return 'hall';
+  if (x > 14.2 && x < 56 && z > -24 && z < -2) return 'slides';
   if (x > -34 && x < -20 && z > 22 && z < 34) return 'shower';
   if (x > -30 && x < -14 && z > 4 && z < 20) return 'bunk';
   if (x > -30 && x < -14 && z > -14 && z < 2) return 'a';
@@ -885,6 +975,7 @@ const ZONES = {
   out:    { c: new THREE.Color(0x03050a), d: 0.02 },
   bunk:   { c: new THREE.Color(0x0c0907), d: 0.05 },
   endless:{ c: new THREE.Color(0x0a1d22), d: 0.04 },
+  slides: { c: new THREE.Color(0x0a2328), d: 0.035 },
 };
 
 function teleportToPool() {
@@ -908,12 +999,10 @@ function escapeNow() {
 }
 
 // ================= Endloser Trakt =================
-const CH = 30, EX = 3000, EZ = 0, EH = 4.2;
+const CH = 30, EX = 3000, EZ = 0, EH = 7.0;
 const chunks = new Map();
-const lamps = [];
 const esupplies = [];
 const takenSup = new Set();
-let lampMode = 'base';
 
 function hash(i, j, k = 0) {
   let h = Math.imul(i | 0, 374761393) ^ Math.imul(j | 0, 668265263) ^ Math.imul(k | 0, 1442695041);
@@ -927,7 +1016,7 @@ function rng(i, j) {
 const ctype = (i, j) => {
   if (i === 0 && j === 0) return 'start';
   const r = hash(i, j, 7);
-  return r < 0.26 ? 'hall' : r < 0.40 ? 'pool' : r < 0.54 ? 'locker' : r < 0.68 ? 'bunks' : r < 0.80 ? 'shower' : 'pillars';
+  return r < 0.16 ? 'hall' : r < 0.26 ? 'duck' : r < 0.38 ? 'slide' : r < 0.46 ? 'pool' : r < 0.54 ? 'spa' : r < 0.62 ? 'lounge' : r < 0.72 ? 'locker' : r < 0.80 ? 'bunks' : r < 0.88 ? 'shower' : 'pillars';
 };
 function hasDoor(kind, i, j) {
   const a = kind === 'N' ? [i, j - 1] : [i - 1, j];
@@ -960,8 +1049,8 @@ function arch(cx, cz, alongX, th) {
 function buildChunk(i, j) {
   const ch = { i, j, group: new THREE.Group() };
   const X0 = EX + i * CH, Z0 = EZ + j * CH, type = ctype(i, j), r = rng(i, j);
-  const th = (type === 'pool' || type === 'hall' || type === 'pillars') ? T.pool : type === 'shower' ? T.shower : [T.a, T.b, T.flur, T.bunk][Math.floor(r() * 4)];
-  const c0 = cols.length, l0 = lamps.length, b0 = beds.length, s0 = sharks.length, a0 = basins.length, u0 = esupplies.length;
+  const th = ['pool', 'hall', 'duck', 'slide', 'pillars', 'lounge'].includes(type) ? T.pool : (type === 'shower' || type === 'spa') ? T.shower : [T.a, T.b, T.flur, T.bunk][Math.floor(r() * 4)];
+  const c0 = cols.length, l0 = lamps.length, b0 = beds.length, s0 = sharks.length, a0 = basins.length, u0 = esupplies.length, f0 = floaters.length, sl0 = slides.length, su0 = supports.length;
   scene.add = function (...o) { ch.group.add(...o); return this; };     // alles landet in der Chunk-Gruppe
   try {
     const wl = (x1, z1, x2, z2) => wall(x1, z1, x2, z2, EH, th);
@@ -1002,6 +1091,7 @@ function buildChunk(i, j) {
       lamps.push({ x: (bx1 + bx2) / 2, y: -1.6, z: bz1 + 5, color: 0x20d6c4, I: 2.4, d: 14 });
       lamps.push({ x: (bx1 + bx2) / 2, y: -1.6, z: bz2 - 5, color: 0x20d6c4, I: 2.4, d: 14 });
       lamps.push({ x: X0 + 15, y: DECK + 3.0, z: Z0 + 15, color: 0xdff6f8, I: 1.2, d: 18 });
+      floater('ring', bx1 + 3 + r() * 8, bz1 + 3 + r() * 14, r() * 6, 1.0); floater('ball', bx1 + 3 + r() * 8, bz1 + 3 + r() * 14, 0, 0.8);
       if (r() < 0.8) { const sh = makeShark(bas); sh.x = bx1 + 1 + r() * (bx2 - bx1 - 2); sh.z = bz1 + 1 + r() * (bz2 - bz1 - 2); sharks.push(sh); }
       spawnSup(X0 + 4, Z0 + 4, Z0 + 26);
     } else if (type === 'hall') {          // geflutete Halle mit Säulen im Wasser (Poolrooms)
@@ -1016,9 +1106,45 @@ function buildChunk(i, j) {
       lamps.push({ x: X0 + 21, y: -1.6, z: Z0 + 21, color: 0x20d6c4, I: 2.6, d: 15 });
       lamps.push({ x: X0 + 15, y: -1.6, z: Z0 + 15, color: 0x20d6c4, I: 2.2, d: 15 });
       lamps.push({ x: X0 + 15, y: DECK + 3.2, z: Z0 + 15, color: 0xdff6f8, I: 1.4, d: 22 });
+      const free = [[12, 12], [18, 12], [12, 18], [18, 18], [6, 15], [24, 15], [15, 6], [15, 24]].sort(() => r() - 0.5);
+      floater('duck', X0 + free[0][0], Z0 + free[0][1], r() * 6.28, 0.6); obst.push({ x: X0 + free[0][0], z: Z0 + free[0][1], r: 0.8 });
+      floater('ring', X0 + free[1][0], Z0 + free[1][1], r() * 6.28, 1.0);
+      floater('ball', X0 + free[2][0], Z0 + free[2][1], 0, 0.8);
+      floater(['noodleB', 'noodleP', 'noodleG'][Math.floor(r() * 3)], X0 + free[3][0], Z0 + free[3][1], r() * 6.28, 1.2);
       const ns = r() < 0.4 ? 2 : 1;
       for (let k = 0; k < ns; k++) { const sh = makeShark(bas, obst); sh.x = X0 + 5 + r() * 20; sh.z = Z0 + 5 + r() * 20; sharks.push(sh); }
       spawnSup(X0 + 1.5, Z0 + 4, Z0 + 26);
+    } else if (type === 'duck') {            // Riesenenten im gefluteten Saal
+      const bas = buildBasin(X0 + 3, X0 + 27, Z0 + 3, Z0 + 27);
+      panels(X0, Z0, X0 + CH, Z0 + CH, DECK + EH, 6);
+      lamps.push({ x: X0 + 9, y: -1.6, z: Z0 + 9, color: 0x20d6c4, I: 2.6, d: 15 });
+      lamps.push({ x: X0 + 21, y: -1.6, z: Z0 + 21, color: 0x20d6c4, I: 2.6, d: 15 });
+      lamps.push({ x: X0 + 15, y: DECK + 3.6, z: Z0 + 15, color: 0xfff2e0, I: 1.6, d: 24 });
+      const spots = [[9, 9], [21, 10], [15, 17], [8, 21], [22, 21]].sort(() => r() - 0.5), obst = [], nd = 2 + Math.floor(r() * 3);
+      for (let k = 0; k < nd; k++) {
+        const [a, b] = spots[k], sc = 1.15 + r() * 0.5, x = X0 + a, z = Z0 + b;
+        floater('duck', x, z, r() * 6.28, sc); addCol(x - 1.15 * sc, z - 1.15 * sc, x + 1.15 * sc, z + 1.15 * sc); obst.push({ x, z, r: 1.3 * sc });
+      }
+      for (let k = 0; k < 3; k++) floater('ring', X0 + 6 + r() * 18, Z0 + 6 + r() * 18, r() * 6.28, 0.9 + r() * 0.6);
+      for (let k = 0; k < 2; k++) floater('ball', X0 + 6 + r() * 18, Z0 + 6 + r() * 18, 0, 0.8);
+      for (let k = 0; k < 3; k++) floater(['noodleB', 'noodleP', 'noodleG'][k], X0 + 6 + r() * 18, Z0 + 6 + r() * 18, r() * 6.28, 1.2);
+      const sh = makeShark(bas, obst); sh.x = X0 + 6 + r() * 18; sh.z = Z0 + 6 + r() * 18; sharks.push(sh);
+      spawnSup(X0 + 1.5, Z0 + 4, Z0 + 26);
+    } else if (type === 'slide') {           // Rutschenraum mit Auffangbecken
+      const mirror = r() < 0.5; let ox, oz, bas;
+      if (!mirror) { ox = X0 + 11; oz = Z0 + 3.2; bas = buildBasin(ox + 0.2, X0 + 27, Z0 + 8, Z0 + 22); }
+      else { ox = X0 + 19; oz = Z0 + 24.5; bas = buildBasin(X0 + 3, ox - 0.2, Z0 + 9, Z0 + 22); }
+      buildSlide(ox, oz, mirror ? Math.PI : 0);
+      panels(X0, Z0, X0 + CH, Z0 + CH, DECK + EH, 6);
+      const cx = (bas.x1 + bas.x2) / 2;
+      lamps.push({ x: cx, y: -1.6, z: (bas.z1 + bas.z2) / 2, color: 0x20d6c4, I: 2.8, d: 16 });
+      lamps.push({ x: X0 + 15, y: DECK + 3.4, z: Z0 + 15, color: 0xfff2e0, I: 1.8, d: 26 });
+      lamps.push({ x: X0 + 15, y: DECK + 3.4, z: Z0 + 25, color: 0xdff6f8, I: 1.5, d: 22 });
+      const obst = [], dx = mirror ? X0 + 7 : X0 + 23, dz = mirror ? Z0 + 20 : Z0 + 20;
+      floater('duck', dx, dz, r() * 6.28, 1.2); addCol(dx - 1.4, dz - 1.4, dx + 1.4, dz + 1.4); obst.push({ x: dx, z: dz, r: 1.6 });
+      floater('ring', cx + (mirror ? -2 : 2), (bas.z1 + bas.z2) / 2 + 3, r() * 6, 1.0); floater('ball', cx, (bas.z1 + bas.z2) / 2 - 3, 0, 0.8);
+      if (r() < 0.7) { const sh = makeShark(bas, obst); sh.x = cx; sh.z = bas.z2 - 2; sharks.push(sh); }
+      spawnSup(mirror ? X0 + 1.5 : X0 + 25, Z0 + 4, Z0 + 7);
     } else {
       flat(X0, Z0, X0 + CH, Z0 + CH, DECK, th.floor, true);
       flat(X0, Z0, X0 + CH, Z0 + CH, DECK + EH, ceilMat, false, 1.5);
@@ -1055,6 +1181,21 @@ function buildChunk(i, j) {
           if (!(skipN && x > skipN[0] && x < skipN[1])) { const h = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.04, 12), grayMat); h.position.set(x, DECK + 2.0, Z0 + 0.35); h.rotation.x = Math.PI / 2 - 0.5; scene.add(h); }
         }
         spawnSup(X0 + 15, Z0 + 5, Z0 + 25);
+      } else if (type === 'spa') {         // Whirlpools und Liegen
+        for (const [a, b] of [[9, 9], [21, 9], [15, 21]]) {
+          prop('hottub', X0 + a, DECK, Z0 + b, 0, 1.0);
+          const wm = new THREE.Mesh(new THREE.CircleGeometry(1.74, 36), new THREE.MeshBasicMaterial({ color: 0x35d6c8, transparent: true, opacity: 0.72 }));
+          wm.rotation.x = -Math.PI / 2; wm.position.set(X0 + a, DECK + 0.82, Z0 + b); scene.add(wm);
+          addCol(X0 + a - 2.15, Z0 + b - 2.15, X0 + a + 2.15, Z0 + b + 2.15);
+        }
+        for (let k = 0; k < 4; k++) { const lx = X0 + 4 + k * 6.5, lz = Z0 + 27.5; prop('lounger', lx, DECK, lz, Math.PI, 1.0); addCol(lx - 0.45, lz - 1.1, lx + 0.45, lz + 1.1); }
+        spawnSup(X0 + 15, Z0 + 3, Z0 + 15);
+      } else if (type === 'lounge') {      // Liegehalle mit Spielzeug und Bademeisterstuhl
+        for (let k = 0; k < 6; k++) { const lx = X0 + 5 + (k % 3) * 9, lz = Z0 + 8 + Math.floor(k / 3) * 12; prop('lounger', lx, DECK, lz, r() * 0.3, 1.0); addCol(lx - 0.5, lz - 1.1, lx + 0.5, lz + 1.1); }
+        prop('lifeguard', X0 + 25.5, DECK, Z0 + 5, Math.PI, 1.0); addCol(X0 + 24.4, Z0 + 3.9, X0 + 26.6, Z0 + 6.1);
+        for (let k = 0; k < 3; k++) prop('ball', X0 + 6 + r() * 18, DECK, Z0 + 4 + r() * 22, 0, 0.6);
+        const ux = X0 + 22, uz = Z0 + 22; prop('duck', ux, DECK, uz, r() * 6.28, 0.9); addCol(ux - 1.1, uz - 1.2, ux + 1.1, uz + 1.2);
+        spawnSup(X0 + 15, Z0 + 4, Z0 + 26);
       } else {      // pillars
         for (const a of [8, 15, 22]) for (const b of [8, 15, 22]) box(X0 + a - 0.6, Z0 + b - 0.6, X0 + a + 0.6, Z0 + b + 0.6, DECK, EH, th.wall, true);
         spawnSup(X0 + 11.5, Z0 + 4, Z0 + 26);
@@ -1063,6 +1204,7 @@ function buildChunk(i, j) {
   } finally { delete scene.add; }
   ch.cols = cols.slice(c0); ch.lamps = lamps.slice(l0); ch.beds = beds.slice(b0);
   ch.sharks = sharks.slice(s0); ch.basins = basins.slice(a0); ch.sups = esupplies.slice(u0);
+  ch.floaters = floaters.slice(f0); ch.slides = slides.slice(sl0); ch.supports = supports.slice(su0);
   scene.add(ch.group);
   chunks.set(i + ',' + j, ch);
 }
@@ -1070,7 +1212,7 @@ function disposeChunk(ch) {
   scene.remove(ch.group);
   ch.group.traverse(o => { if (o.geometry) o.geometry.dispose(); });
   const rm = (arr, items) => { const st = new Set(items); for (let k = arr.length - 1; k >= 0; k--) if (st.has(arr[k])) arr.splice(k, 1); };
-  rm(cols, ch.cols); rm(lamps, ch.lamps); rm(beds, ch.beds); rm(sharks, ch.sharks); rm(basins, ch.basins); rm(esupplies, ch.sups);
+  rm(cols, ch.cols); rm(lamps, ch.lamps); rm(beds, ch.beds); rm(sharks, ch.sharks); rm(basins, ch.basins); rm(esupplies, ch.sups); rm(floaters, ch.floaters); rm(slides, ch.slides); rm(supports, ch.supports);
 }
 function clearChunks() { for (const ch of chunks.values()) disposeChunk(ch); chunks.clear(); }
 function updateChunks() {
@@ -1083,7 +1225,6 @@ function updateChunks() {
 }
 // Lampen-Pool: feste Anzahl echter Lichter, die zu den nächsten Chunk-Lampen springen (kein Shader-Neubau)
 function assignLamps() {
-  lampMode = 'endless';
   const d2 = a => (a.x - player.x) ** 2 + (a.z - player.z) ** 2;
   const cand = lamps.slice().sort((a, b) => d2(a) - d2(b));
   indoorLights.forEach((l, k) => {
@@ -1091,17 +1232,12 @@ function assignLamps() {
     if (sp) { l.position.set(sp.x, sp.y, sp.z); l.color.setHex(sp.color); l.distance = sp.d; l.userData.base = sp.I; } else l.userData.base = 0;
   });
 }
-function restoreLamps() {
-  if (lampMode === 'base') return;
-  lampMode = 'base';
-  for (const l of indoorLights) { const o = l.userData.orig; l.position.set(o.x, o.y, o.z); l.color.setHex(o.color); l.distance = o.d; l.userData.base = o.I; }
-}
 function enterEndless() {
   placePlayer(EX + CH / 2, EZ + CH / 2); player.yaw = Math.PI; player.pitch = 0;
   showMsg('Die Tür fällt hinter dir zu … der Flur hat dich verschluckt.', 3.6); thump(45, 0.6, 0.9);
 }
 function exitEndless() {
-  clearChunks(); restoreLamps();
+  clearChunks();
   placePlayer(-12, 29.5); player.yaw = 0; player.pitch = 0;
   showMsg('Zurück in der Lobby.', 2.4); thump(120, 0.3, 0.4);
 }
@@ -1141,22 +1277,51 @@ function updateSleep(dt) {
   if (sleepT <= 0) { sleepT = 0; $('dim').style.opacity = 0; }
 }
 
+// ================= Rutschen fahren =================
+function startRide(sl) {
+  ride = { sl, s: 0, speed: 2.5 }; player.bob = 0; thump(55, 0.4, 0.5);
+  showMsg('Festhalten …', 1.2);
+}
+function updateRide(dt) {
+  const sl = ride.sl, pts = sl.path, cum = sl.cum;
+  ride.speed = Math.min(7.5, ride.speed + dt * 2.2); ride.s += ride.speed * dt;
+  if (ride.s >= cum[cum.length - 1]) { endRide(); return; }
+  let k = 1; while (k < cum.length - 1 && cum[k] < ride.s) k++;
+  const t = (ride.s - cum[k - 1]) / (cum[k] - cum[k - 1]), a = pts[k - 1], b = pts[k];
+  player.x = a.x + (b.x - a.x) * t; player.z = a.z + (b.z - a.z) * t;
+  const py = a.y + (b.y - a.y) * t;
+  player.fy = py - 0.75; player.eyeOff = 1.0; player.eye = py + 0.25; player.falling = false; player.vy = 0; player.inWater = false; player.basin = null;
+  const dx = b.x - a.x, dz = b.z - a.z, dy = b.y - a.y, hl = Math.hypot(dx, dz) || 1;
+  player.yaw = turnToward(player.yaw, Math.atan2(-dx, -dz), 7 * dt);
+  player.pitch += (Math.atan2(dy, hl) - player.pitch) * Math.min(1, dt * 6);
+  player.rideRoll = Math.sin(ride.s * 0.9) * 0.05;
+  if (Math.random() < dt * 4) tone('sawtooth', 90 + ride.speed * 12, 80, 0.05, 0.12);
+}
+function endRide() {
+  const sl = ride.sl, n = sl.path.length, a = sl.path[n - 2], b = sl.path[n - 1], hl = Math.hypot(b.x - a.x, b.z - a.z) || 1;
+  ride = null; player.rideRoll = 0;
+  player.pushX = (b.x - a.x) / hl * 4.5; player.pushZ = (b.z - a.z) / hl * 4.5;
+  player.falling = true; player.vy = 1.0; player.fallFrom = player.fy; player.pitch = 0;
+}
+
 // ================= Update =================
 function update(dt, time) {
   waveTex.offset.x = time * 0.01; waveTex.offset.y = time * 0.006;
+  for (const f of floaters) { f.ph += dt; f.g.position.y = f.base + Math.sin(f.ph * 0.9) * 0.05; f.g.rotation.y += f.spin * dt; f.g.rotation.z = Math.sin(f.ph * 0.6) * 0.025; }
   if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').style.opacity = 0; }
 
   // Lichtflackern, gelegentlich Stromausfall
   dimT = Math.max(0, dimT - dt);
   const flick = dimT > 0 ? 0.08 : (Math.random() < 0.02 ? rand(0.3, 0.8) : 1);
   panelMat.color.setScalar(flick * 0.95); hemi.intensity = hemiBase * (dimT > 0 ? 0.1 : (0.85 + 0.15 * flick));
-  if (player.x > 2000) assignLamps(); else restoreLamps();
+  assignLamps();
   for (const l of indoorLights) l.intensity = dimT > 0 ? 0 : l.userData.base * flick;
   flash.visible = flashOn;
 
   if (state !== 'play') { applyCamera(); return; }
   if (!escaped) runTime += dt;
   if (sleepT > 0) { updateSleep(dt); applyCamera(); return; }
+  if (ride) { updateRide(dt); applyCamera(); return; }
 
   // Eingabe
   let mx = 0, mz = 0;
@@ -1191,7 +1356,9 @@ function update(dt, time) {
     player.bob += dt * (player.inWater ? (player.sprinting ? 6 : 3.5) : (player.sprinting ? 9 : 6));
     resolveCols(player, 0.35);
   }
+  if (player.falling && (player.pushX || player.pushZ)) { player.x += player.pushX * dt; player.z += player.pushZ * dt; player.pushX *= 0.985; player.pushZ *= 0.985; }
   updateVertical(dt);
+  if (!player.falling) { player.pushX = 0; player.pushZ = 0; }
   player.basin = (!player.falling && player.fy <= 0.15) ? basinAt(player.x, player.z) : null;
   player.inWater = !!player.basin;
   if (player.inWater && !wasWater) thump(200, 0.25, 0.25);
@@ -1227,7 +1394,11 @@ function update(dt, time) {
   // Bett in der Nähe?
   nearBed = null;
   if (!player.inWater && !player.falling) { let bd = 1.9; for (const b of beds) { const d = Math.hypot(b.x - player.x, b.z - player.z); if (d < bd) { bd = d; nearBed = b; } } }
-  $('prompt').style.opacity = nearBed ? 1 : 0;
+  nearSlide = null;
+  if (!player.falling) for (const sl of slides) if (sl.path.length > 1 && Math.abs(player.fy - sl.y) < 0.4 && Math.hypot(player.x - sl.sx, player.z - sl.sz) < 1.9) { nearSlide = sl; break; }
+  const ptxt = nearSlide ? 'E – Rutschen' : 'E – Schlafen (speichert deinen Fortschritt)';
+  if ($('prompt').textContent !== ptxt) $('prompt').textContent = ptxt;
+  $('prompt').style.opacity = (nearSlide || nearBed) ? 1 : 0;
 
   // Ausgangstüren
   const z = zoneAt(player.x, player.z);
@@ -1289,7 +1460,7 @@ function applyCamera() {
   const bob = Math.sin(player.bob) * (player.inWater ? 0.07 : 0.04);
   camera.position.set(player.x, player.eye + bob, player.z);
   sky.position.copy(camera.position);
-  camera.rotation.set(player.pitch, player.yaw, player.inWater ? Math.sin(player.bob * 0.5) * 0.015 : 0);
+  camera.rotation.set(player.pitch, player.yaw, (player.inWater ? Math.sin(player.bob * 0.5) * 0.015 : 0) + (ride ? player.rideRoll : 0));
 }
 
 // ================= Loop =================
@@ -1309,7 +1480,7 @@ window.__g = {
   get state() { return state; }, get laps() { return laps; }, get finished() { return finished; }, get escaped() { return escaped; },
   player, shark, supplies, start: begin,
   teleport(x, z) { placePlayer(x, z); },
-  keys, beds, sharks, basins, chunks, supports, enterEndless, exitEndless, startSleep, buildChunk, hash, ctype, EX, EZ, CH,
+  keys, beds, sharks, basins, chunks, supports, slides, floaters, startRide, get ride() { return ride; }, get nearSlide() { return nearSlide; }, buildSlide, enterEndless, exitEndless, startSleep, buildChunk, hash, ctype, EX, EZ, CH,
   get checkpoint() { return checkpoint; }, get sleepT() { return sleepT; }, get nearBed() { return nearBed; },
   step(n, dt = 0.05) { for (let k = 0; k < n; k++) update(dt, performance.now() / 1000); },
   look(yaw, pitch) { player.yaw = yaw; player.pitch = pitch || 0; },
