@@ -7,31 +7,39 @@
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; font-family: system-ui, sans-serif; color: #e8fbff; user-select: none; }
   canvas { display: block; width: 100%; height: 100%; }
-  #hud { position: fixed; left: 16px; bottom: 16px; width: 220px; pointer-events: none; text-shadow: 0 1px 4px #000; }
+  #hud { position: fixed; left: 16px; bottom: 16px; width: 230px; pointer-events: none; text-shadow: 0 1px 4px #000; }
   #bar { height: 10px; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.5); border-radius: 6px; overflow: hidden; margin-top: 6px; }
   #fill { height: 100%; width: 100%; background: #7fe3ff; transition: background .2s; }
-  #lvl { position: fixed; top: 14px; right: 18px; text-align: right; text-shadow: 0 1px 4px #000; pointer-events: none; }
-  #msg { position: fixed; top: 14%; left: 0; right: 0; text-align: center; font-size: 22px; font-weight: 700; color: #ff9a9a; text-shadow: 0 2px 8px #000; opacity: 0; transition: opacity .3s; pointer-events: none; }
-  #vig { position: fixed; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(120,0,0,0) 40%, rgba(150,0,0,.85) 100%); }
-  #ov { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; background: rgba(0,12,18,.82); padding: 24px; box-sizing: border-box; cursor: pointer; }
-  #ov h1 { margin: 0; font-size: clamp(34px, 7vw, 64px); letter-spacing: .08em; }
-  #ov p { margin: 0; max-width: 560px; line-height: 1.5; color: #b9dfe8; }
+  #lap { position: fixed; top: 14px; left: 0; right: 0; text-align: center; text-shadow: 0 1px 4px #000; pointer-events: none; font-size: 18px; }
+  #lap small { display: block; font-size: 14px; color: #bfe9f3; margin-top: 2px; }
+  #sup { position: fixed; top: 14px; right: 18px; text-align: right; text-shadow: 0 1px 4px #000; pointer-events: none; }
+  #msg { position: fixed; top: 16%; left: 0; right: 0; text-align: center; font-size: 22px; font-weight: 700; color: #ffe29a; text-shadow: 0 2px 8px #000; opacity: 0; transition: opacity .3s; pointer-events: none; padding: 0 16px; }
+  .vig { position: fixed; inset: 0; pointer-events: none; opacity: 0; }
+  #vig { background: radial-gradient(ellipse at center, rgba(120,0,0,0) 40%, rgba(150,0,0,.85) 100%); }
+  #drown { background: radial-gradient(ellipse at center, rgba(0,0,0,0) 20%, rgba(0,5,10,.97) 90%); }
+  #dim { background: #000; }
+  #ov { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; background: rgba(0,12,18,.84); padding: 24px; box-sizing: border-box; cursor: pointer; }
+  #ov h1 { margin: 0; font-size: clamp(34px, 7vw, 62px); letter-spacing: .08em; }
+  #ov p { margin: 0; max-width: 600px; line-height: 1.5; color: #b9dfe8; }
   #ov .go { margin-top: 8px; font-weight: 700; color: #7fe3ff; }
   #ov.hidden { display: none; }
   #err { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 24px; background: #000; }
 </style>
 </head>
 <body>
-<div id="vig"></div>
+<div class="vig" id="dim"></div>
+<div class="vig" id="drown"></div>
+<div class="vig" id="vig"></div>
 <div id="hud">Ausdauer<div id="bar"><div id="fill"></div></div></div>
-<div id="lvl"></div>
+<div id="lap"></div>
+<div id="sup"></div>
 <div id="msg"></div>
 <div id="ov">
-  <h1>POOLROOMS</h1>
-  <p>Du bist in einem endlosen, leeren Schwimmbad aufgewacht. Das Licht summt. Etwas Großes schwimmt unter dir.<br>
-     Finde den grün leuchtenden <b>AUSGANG</b> an der Wand und komm lebend hin.</p>
-  <p><b>WASD</b> schwimmen · <b>Maus</b> umsehen · <b>Shift</b> sprinten (kostet Ausdauer, macht Lärm) · <b>Esc</b> Pause<br>
-     Säulen geben Deckung. Der Hai hört Sprinten weiter als Schwimmen.</p>
+  <h1 id="ovT">POOLROOMS</h1>
+  <p id="ovP">Ein Herbstnachmittag im Schwimmzentrum. Du bist allein. Die Lampen summen, und jede Tür führt zurück ins Wasser.<br>
+     Schwimm <b>zehn Bahnen</b>, dann ist der Ausgang offen. Im Becken ist etwas Großes.</p>
+  <p id="ovH"><b>WASD</b> bewegen · <b>Maus</b> umsehen · <b>Shift</b> sprinten (im Wasser teuer und laut) · <b>Esc</b> Pause<br>
+     Schwimmen kostet Ausdauer. Such <b>orange Getränke</b> in Umkleiden, Duschen und Flur. An Land erholst du dich langsam.</p>
   <div class="go" id="go">Klicken zum Starten</div>
 </div>
 <div id="err">WebGL wird von diesem Browser nicht unterstützt.</div>
@@ -48,207 +56,408 @@ if (typeof THREE === 'undefined') {
   return;
 }
 
-// ---------- Konstanten ----------
-const P = 45;                 // halbe Raumbreite
-const CEIL = 7, FLOOR = -3.2;
-const WALK = 3.6, SPRINT = 6.2;
-const EYE = 0.35;
-const PILLAR_R = 0.9;
+// ================= Konstanten =================
+const DECK = 0.3;                 // Höhe von Boden/Beckenrand über Wasser (Wasser = y 0)
+const BASIN = { x: 7, z: 18, floor: -2.4 };       // halbe Beckenmaße
+const LAPS = 10;
+const SWIM = 2.0, SWIM_SPRINT = 3.6, WALK = 3.2, RUN = 5.0;
+const EYE_WATER = 0.35, EYE_DECK = DECK + 1.65;
+const ROOM_H = 3.4, HALL_H = 6;
 
-let best = 0;
-try { best = parseInt(localStorage.getItem('pr_best') || '0', 10) || 0; } catch (e) {}
+let best = 0;   // beste (kleinste) Fluchtzeit in Sekunden
+try { best = parseFloat(localStorage.getItem('pr_best') || '0') || 0; } catch (e) {}
 const saveBest = () => { try { localStorage.setItem('pr_best', String(best)); } catch (e) {} };
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
-// ---------- Renderer / Szene ----------
+// ================= Renderer / Szene =================
 let renderer;
-try {
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-} catch (e) { $('err').style.display = 'flex'; return; }
+try { renderer = new THREE.WebGLRenderer({ antialias: true }); }
+catch (e) { $('err').style.display = 'flex'; return; }
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.setSize(innerWidth, innerHeight);
 document.body.prepend(renderer.domElement);
 const canvas = renderer.domElement;
 
-const FOG = 0xa8dde6;
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(FOG);
-scene.fog = new THREE.FogExp2(FOG, 0.034);
-const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 200);
+scene.background = new THREE.Color(0xa8dde6);
+scene.fog = new THREE.FogExp2(0xa8dde6, 0.03);
+const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.05, 200);
 camera.rotation.order = 'YXZ';
 addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
   camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
 });
-
-// Fliesen-Textur aus Canvas
-function tileTex(base, grout, rx, ry) {
-  const c = document.createElement('canvas'); c.width = c.height = 128;
-  const g = c.getContext('2d');
-  g.fillStyle = grout; g.fillRect(0, 0, 128, 128);
-  g.fillStyle = base; g.fillRect(3, 3, 122, 122);
-  for (let i = 0; i < 260; i++) {                       // feine Unreinheiten
-    g.fillStyle = 'rgba(0,0,0,' + rand(0.015, 0.05) + ')';
-    g.fillRect(rand(3, 124), rand(3, 124), rand(1, 3), rand(1, 3));
-  }
-  const t = new THREE.CanvasTexture(c);
-  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(rx, ry);
-  t.anisotropy = 4;
-  return t;
-}
-
-const roomH = CEIL - FLOOR, midY = (CEIL + FLOOR) / 2;
-const wallMat = new THREE.MeshLambertMaterial({ map: tileTex('#dff3f1', '#9fc4c6', P, roomH / 2), side: THREE.DoubleSide });
-const walls = [[0, -P, 0], [0, P, Math.PI], [-P, 0, Math.PI / 2], [P, 0, -Math.PI / 2]];
-for (const [x, z, ry] of walls) {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(P * 2, roomH), wallMat);
-  m.position.set(x, midY, z); m.rotation.y = ry; scene.add(m);
-}
-const floor = new THREE.Mesh(new THREE.PlaneGeometry(P * 2, P * 2),
-  new THREE.MeshLambertMaterial({ map: tileTex('#7fb7c4', '#4d8794', P, P) }));
-floor.rotation.x = -Math.PI / 2; floor.position.y = FLOOR; scene.add(floor);
-
-const ceil = new THREE.Mesh(new THREE.PlaneGeometry(P * 2, P * 2),
-  new THREE.MeshLambertMaterial({ map: tileTex('#f2f6f4', '#c5cfcd', P / 1.5, P / 1.5) }));
-ceil.rotation.x = Math.PI / 2; ceil.position.y = CEIL; scene.add(ceil);
-
-// Deckenlampen (gemeinsames Material -> alle flackern zusammen)
-const panelMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-for (let x = -40; x <= 40; x += 10) for (let z = -40; z <= 40; z += 10) {
-  const p = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.4), panelMat);
-  p.rotation.x = Math.PI / 2; p.position.set(x, CEIL - 0.03, z); scene.add(p);
-}
-const hemi = new THREE.HemisphereLight(0xffffff, 0x6fa9b8, 1.15);
+const hemi = new THREE.HemisphereLight(0xffffff, 0x8aa9b0, 1.15);
 scene.add(hemi);
 
-// Wasseroberfläche mit wanderndem Wellenmuster
+// ================= Texturen & Helfer =================
+function tileTex(base, grout, size = 128) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d');
+  g.fillStyle = grout; g.fillRect(0, 0, size, size);
+  g.fillStyle = base; g.fillRect(3, 3, size - 6, size - 6);
+  for (let i = 0; i < 260; i++) {
+    g.fillStyle = 'rgba(0,0,0,' + rand(0.015, 0.05) + ')';
+    g.fillRect(rand(3, size - 4), rand(3, size - 4), rand(1, 3), rand(1, 3));
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping; t.anisotropy = 4;
+  return t;
+}
+const lamb = (map, extra) => new THREE.MeshLambertMaterial(Object.assign({ map }, extra));
+function theme(wallBase, wallGrout, floorBase, floorGrout) {
+  return { wall: lamb(tileTex(wallBase, wallGrout)), floor: lamb(tileTex(floorBase, floorGrout)) };
+}
+const T = {
+  hall:  theme('#dff3f1', '#9fc4c6', '#7fb7c4', '#4d8794'),
+  a:     theme('#ecdcb4', '#b79f6c', '#c9b27a', '#8e7a4c'),
+  b:     theme('#d3e3cc', '#93ad8d', '#a9c19e', '#6e8b66'),
+  shower:theme('#e3f2f8', '#9dbfcc', '#9ec8d8', '#5f8ea0'),
+  flur:  theme('#e2dfa6', '#aaa56a', '#c4c07c', '#8d8950'),
+};
+const ceilMat = lamb(tileTex('#f2f6f2', '#c3ccc8'));
+const grayMat = new THREE.MeshLambertMaterial({ color: 0x8e9aa0 });
+const woodMat = new THREE.MeshLambertMaterial({ color: 0xb98f5a });
+const panelMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+
+function scaleFaceUV(geo, face, su, sv) {
+  const uv = geo.attributes.uv;
+  for (let i = face * 4; i < face * 4 + 4; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+  uv.needsUpdate = true;
+}
+function scalePlaneUV(geo, su, sv) {
+  const uv = geo.attributes.uv;
+  for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
+  uv.needsUpdate = true;
+}
+
+// Kollisionsboxen (x1,z1,x2,z2)
+const cols = [];
+function addCol(x1, z1, x2, z2) { cols.push({ x1: Math.min(x1, x2), z1: Math.min(z1, z2), x2: Math.max(x1, x2), z2: Math.max(z1, z2) }); }
+
+// Quader mit gekachelter Textur; y0/h in Weltkoordinaten
+function box(x1, z1, x2, z2, y0, h, mat, collide = true, tile = 2) {
+  const w = Math.abs(x2 - x1), d = Math.abs(z2 - z1);
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  dims.forEach((s, f) => scaleFaceUV(geo, f, s[0] / tile, s[1] / tile));
+  const m = new THREE.Mesh(geo, mat);
+  m.position.set((x1 + x2) / 2, y0 + h / 2, (z1 + z2) / 2);
+  scene.add(m);
+  if (collide) addCol(x1, z1, x2, z2);
+  return m;
+}
+function wall(x1, z1, x2, z2, h, th) {
+  const t = 0.15;
+  if (x1 === x2) box(x1 - t, Math.min(z1, z2), x1 + t, Math.max(z1, z2), DECK, h, th.wall);
+  else box(Math.min(x1, x2), z1 - t, Math.max(x1, x2), z1 + t, DECK, h, th.wall);
+}
+function flat(x1, z1, x2, z2, y, mat, up, tile = 2) {
+  const w = Math.abs(x2 - x1), d = Math.abs(z2 - z1);
+  const geo = new THREE.PlaneGeometry(w, d); scalePlaneUV(geo, w / tile, d / tile);
+  const m = new THREE.Mesh(geo, mat);
+  m.rotation.x = up ? -Math.PI / 2 : Math.PI / 2;
+  m.position.set((x1 + x2) / 2, y, (z1 + z2) / 2); scene.add(m);
+  return m;
+}
+function panels(x1, z1, x2, z2, y, step) {
+  for (let x = x1 + step / 2; x < x2; x += step) for (let z = z1 + step / 2; z < z2; z += step) {
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 1.2), panelMat);
+    p.rotation.x = Math.PI / 2; p.position.set(x, y - 0.03, z); scene.add(p);
+  }
+}
+function room(x1, z1, x2, z2, h, th, step = 5) {
+  flat(x1, z1, x2, z2, DECK, th.floor, true);
+  flat(x1, z1, x2, z2, DECK + h, ceilMat, false, 1.5);
+  panels(x1, z1, x2, z2, DECK + h, step);
+}
+
+// ================= Gebäude =================
+// Schwimmhalle: Deck rund ums Becken
+const HX = 14, HZ = 24;
+flat(-HX, -HZ, -BASIN.x, HZ, DECK, T.hall.floor, true);
+flat(BASIN.x, -HZ, HX, HZ, DECK, T.hall.floor, true);
+flat(-BASIN.x, -HZ, BASIN.x, -BASIN.z, DECK, T.hall.floor, true);
+flat(-BASIN.x, BASIN.z, BASIN.x, HZ, DECK, T.hall.floor, true);
+flat(-HX, -HZ, HX, HZ, DECK + HALL_H, ceilMat, false, 1.5);
+panels(-HX, -HZ, HX, HZ, DECK + HALL_H, 6);
+
+// Becken: Boden, Seitenwände, Wasser
+flat(-BASIN.x, -BASIN.z, BASIN.x, BASIN.z, BASIN.floor, T.hall.floor, true);
+{
+  const bh = DECK - BASIN.floor, bm = (DECK + BASIN.floor) / 2;
+  const mk = (len, x, z, ry) => {
+    const g = new THREE.PlaneGeometry(len, bh); scalePlaneUV(g, len / 2, bh / 2);
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: T.hall.wall.map, side: THREE.DoubleSide }));
+    m.position.set(x, bm, z); m.rotation.y = ry; scene.add(m);
+  };
+  mk(BASIN.z * 2, -BASIN.x, 0, Math.PI / 2); mk(BASIN.z * 2, BASIN.x, 0, Math.PI / 2);
+  mk(BASIN.x * 2, 0, -BASIN.z, 0); mk(BASIN.x * 2, 0, BASIN.z, 0);
+}
 const waveC = document.createElement('canvas'); waveC.width = waveC.height = 256;
 {
   const g = waveC.getContext('2d');
   g.fillStyle = '#58c3d6'; g.fillRect(0, 0, 256, 256);
   g.strokeStyle = 'rgba(255,255,255,.28)'; g.lineWidth = 2;
   for (let i = 0; i < 40; i++) {
-    const x = rand(0, 256), y = rand(0, 256), r = rand(10, 28);
-    g.beginPath(); g.arc(x, y, r, rand(0, 6), rand(0, 6) + 2); g.stroke();
+    g.beginPath(); g.arc(rand(0, 256), rand(0, 256), rand(10, 28), rand(0, 6), rand(0, 6) + 2); g.stroke();
   }
 }
 const waveTex = new THREE.CanvasTexture(waveC);
-waveTex.wrapS = waveTex.wrapT = THREE.RepeatWrapping; waveTex.repeat.set(P / 3, P / 3);
-const water = new THREE.Mesh(new THREE.PlaneGeometry(P * 2, P * 2),
+waveTex.wrapS = waveTex.wrapT = THREE.RepeatWrapping; waveTex.repeat.set(BASIN.x * 2 / 3, BASIN.z * 2 / 3);
+const water = new THREE.Mesh(new THREE.PlaneGeometry(BASIN.x * 2, BASIN.z * 2),
   new THREE.MeshBasicMaterial({ map: waveTex, transparent: true, opacity: 0.5, depthWrite: false }));
-water.rotation.x = -Math.PI / 2; water.position.y = 0; scene.add(water);
+water.rotation.x = -Math.PI / 2; scene.add(water);
 
-// Säulen
-const pillars = [];
-const pillarMat = new THREE.MeshLambertMaterial({ map: tileTex('#e6f4f2', '#a9c9ca', 4, roomH / 2) });
-for (let x = -35; x <= 35; x += 14) for (let z = -35; z <= 35; z += 14) {
-  const m = new THREE.Mesh(new THREE.CylinderGeometry(PILLAR_R, PILLAR_R, roomH, 18), pillarMat);
-  m.position.set(x, midY, z); scene.add(m);
-  pillars.push({ x, z, r: PILLAR_R });
-}
-
-// Ausgang: Leiter + grünes Leuchtschild (fog:false -> immer sichtbar)
-const exitGroup = new THREE.Group(); scene.add(exitGroup);
+// Bahnenseile
 {
-  const steel = new THREE.MeshLambertMaterial({ color: 0xb8c4c8 });
-  for (const dx of [-0.35, 0.35]) {
-    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 3.2, 8), steel);
-    rail.position.set(dx, 0.2, 0); exitGroup.add(rail);
-  }
-  for (let i = 0; i < 6; i++) {
-    const r = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.7, 8), steel);
-    r.rotation.z = Math.PI / 2; r.position.set(0, -1.2 + i * 0.55, 0); exitGroup.add(r);
-  }
-  const c = document.createElement('canvas'); c.width = 512; c.height = 128;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 8;
   const g = c.getContext('2d');
-  g.fillStyle = '#0a3d1c'; g.fillRect(0, 0, 512, 128);
-  g.strokeStyle = '#7dffa6'; g.lineWidth = 6; g.strokeRect(6, 6, 500, 116);
-  g.fillStyle = '#9dffbc'; g.font = 'bold 74px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('AUSGANG', 256, 68);
-  const sign = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.5),
-    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), fog: false }));
-  sign.position.set(0, 3.4, 0.05); exitGroup.add(sign);
+  for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#e8f2f4' : '#d63b3b'; g.fillRect(i * 8, 0, 8, 8); }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(BASIN.z * 2 / 0.8, 1);
+  const m = new THREE.MeshLambertMaterial({ map: t });
+  for (const x of [-4.67, -2.33, 0, 2.33, 4.67]) {
+    const r = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, BASIN.z * 2 - 0.4), m);
+    r.position.set(x, 0.03, 0); scene.add(r);
+  }
 }
-const exitPos = { x: 0, z: 0 };
 
-// ---------- Hai ----------
-function makeShark() {
+// Wände (Hallentüren: West z -6..-3, Ost z 3..6, Süd x -1.5..1.5)
+wall(-HX, -HZ, HX, -HZ, HALL_H, T.hall);
+wall(-HX, -HZ, -HX, -6, HALL_H, T.hall); wall(-HX, -3, -HX, HZ, HALL_H, T.hall);
+wall(HX, -HZ, HX, 3, HALL_H, T.hall);    wall(HX, 6, HX, HZ, HALL_H, T.hall);
+wall(-20, HZ, -1.5, HZ, HALL_H, T.hall); wall(1.5, HZ, 20, HZ, HALL_H, T.hall);
+
+// Fenster (Herbstabend)
+{
+  const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+  const g = c.getContext('2d'); const gr = g.createLinearGradient(0, 0, 0, 128);
+  gr.addColorStop(0, '#9aa7b5'); gr.addColorStop(0.6, '#f0b27a'); gr.addColorStop(1, '#d88b55');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 128);
+  g.fillStyle = 'rgba(40,30,30,.55)'; g.fillRect(30, 0, 4, 128); g.fillRect(0, 62, 64, 4);
+  const mat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), fog: false });
+  for (const z of [-18, -9, 9, 18]) {
+    for (const [x, ry] of [[-HX + 0.2, Math.PI / 2], [HX - 0.2, -Math.PI / 2]]) {
+      const w = new THREE.Mesh(new THREE.PlaneGeometry(4, 2.4), mat);
+      w.position.set(x, DECK + 4.2, z); w.rotation.y = ry; scene.add(w);
+    }
+  }
+}
+
+// Umkleide A (x -30..-14, z -14..2)
+room(-30, -14, -14, 2, ROOM_H, T.a);
+wall(-30, -14, -30, 2, ROOM_H, T.a); wall(-30, -14, -14, -14, ROOM_H, T.a); wall(-30, 2, -14, 2, ROOM_H, T.a);
+// Umkleide B (x 14..30, z -2..14)
+room(14, -2, 30, 14, ROOM_H, T.b);
+wall(30, -2, 30, 14, ROOM_H, T.b); wall(14, -2, 30, -2, ROOM_H, T.b); wall(14, 14, 30, 14, ROOM_H, T.b);
+// Flur (x -20..20, z 24..32)
+room(-20, 24, 20, 32, ROOM_H, T.flur, 6);
+wall(20, 24, 20, 32, ROOM_H, T.flur); wall(-20, 32, 20, 32, ROOM_H, T.flur);
+// Duschen (x -34..-20, z 22..34), Tür zum Flur bei z 26..29
+room(-34, 22, -20, 34, ROOM_H, T.shower);
+wall(-20, 22, -20, 26, ROOM_H, T.shower); wall(-20, 29, -20, 34, ROOM_H, T.shower);
+wall(-34, 22, -34, 34, ROOM_H, T.shower); wall(-34, 22, -20, 22, ROOM_H, T.shower); wall(-34, 34, -20, 34, ROOM_H, T.shower);
+
+// ---- Möbel ----
+function lockerTex(color) {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 160;
+  const g = c.getContext('2d');
+  g.fillStyle = '#20282c'; g.fillRect(0, 0, 64, 160);
+  g.fillStyle = color; g.fillRect(2, 2, 60, 156);
+  g.fillStyle = 'rgba(0,0,0,.35)';
+  for (let i = 0; i < 6; i++) g.fillRect(14, 12 + i * 5, 36, 2);
+  g.fillStyle = '#d7dde0'; g.fillRect(48, 82, 5, 14);
+  g.fillStyle = 'rgba(255,255,255,.12)'; g.fillRect(2, 2, 12, 156);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+function lockers(x1, z1, x2, z2, face, color) {
+  const w = Math.abs(x2 - x1), d = Math.abs(z2 - z1), h = 1.95;
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const len = face <= 1 ? d : w;
+  scaleFaceUV(geo, face, len / 0.5, 1);
+  const mats = [0, 1, 2, 3, 4, 5].map(i => i === face ? lamb(lockerTex(color)) : grayMat);
+  const m = new THREE.Mesh(geo, mats);
+  m.position.set((x1 + x2) / 2, DECK + h / 2, (z1 + z2) / 2); scene.add(m);
+  addCol(x1, z1, x2, z2);
+}
+function bench(cx, cz, len, alongX) {
+  const w = alongX ? len : 0.5, d = alongX ? 0.5 : len;
+  box(cx - w / 2, cz - d / 2, cx + w / 2, cz + d / 2, DECK + 0.4, 0.08, woodMat, false);   // Sitzfläche
+  box(cx - w / 2 + 0.1, cz - d / 2 + 0.1, cx + w / 2 - 0.1, cz + d / 2 - 0.1, DECK, 0.4, grayMat, true);
+}
+function cabins(x0, z0, dirZ, count, step, curtainColor) {
+  // Kabinenreihe entlang x an Wand z0; dirZ: +1 = Kabinen reichen nach +z, -1 nach -z
+  const mat = new THREE.MeshLambertMaterial({ color: 0xcfd6d8 });
+  const cm = new THREE.MeshLambertMaterial({ color: curtainColor, side: THREE.DoubleSide });
+  for (let k = 0; k <= count; k++) {
+    const x = x0 + k * step, za = z0 + dirZ * 0.1, zb = z0 + dirZ * 1.85;
+    box(x - 0.04, za, x + 0.04, zb, DECK, 2.1, mat, true);
+  }
+  for (let k = 0; k < count; k++) {
+    const x = x0 + k * step, zc = z0 + dirZ * 1.75;
+    const open = k % 2 === 0;
+    const xs = open ? x + 0.1 : x + 0.1, xe = open ? x + 0.55 : x + step - 0.1;
+    box(xs, zc - 0.03, xe, zc + 0.03, DECK + 0.15, 1.95, cm, !open);
+  }
+}
+function lockerBox(x1, z1, x2, z2, face, color) { lockers(x1, z1, x2, z2, face, color); }
+
+// A
+lockerBox(-29.85, -13.7, -29.3, 1.7, 0, '#2f7f8f');
+lockerBox(-29.2, -13.85, -14.5, -13.3, 4, '#2f7f8f');
+bench(-22, -10, 4, true); bench(-22, -0.5, 4, true);
+cabins(-28, 2, -1, 7, 1.6, 0xa33a4a);
+// B
+lockerBox(29.3, -1.7, 29.85, 13.7, 1, '#7a5fa0');
+lockerBox(15.0, 13.3, 28.8, 13.85, 5, '#7a5fa0');
+bench(22, 3, 4, true); bench(22, 9, 4, true);
+cabins(17, -2, 1, 7, 1.6, 0x3a7aa3);
+// Duschen: Kabinen mit Duschköpfen
+{
+  const sm = new THREE.MeshLambertMaterial({ map: T.shower.wall.map });
+  for (let k = 0; k <= 9; k++) {
+    const x = -33 + k * 1.4;
+    box(x - 0.04, 22.15, x + 0.04, 23.8, DECK, 2.2, sm, true);
+    box(x - 0.04, 32.2, x + 0.04, 33.85, DECK, 2.2, sm, true);
+  }
+  for (let k = 0; k < 9; k++) {
+    const x = -33 + k * 1.4 + 0.7;
+    for (const [z, dz] of [[22.35, 1], [33.65, -1]]) {
+      const head = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.04, 12), grayMat);
+      head.position.set(x, DECK + 2.0, z); head.rotation.x = Math.PI / 2 - 0.5 * dz; scene.add(head);
+      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.4, 6), grayMat);
+      pipe.position.set(x, DECK + 2.2, z - 0.05 * dz); scene.add(pipe);
+    }
+  }
+}
+// Flur: Automat, Empfang, Bänke
+{
+  const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+  const g = c.getContext('2d');
+  g.fillStyle = '#2b2f33'; g.fillRect(0, 0, 64, 128);
+  g.fillStyle = '#ffd37a'; g.fillRect(6, 8, 52, 84);
+  const cl = ['#ff7a3a', '#6ad0ff', '#9aff8a', '#ff7a3a'];
+  for (let r = 0; r < 4; r++) for (let q = 0; q < 3; q++) { g.fillStyle = cl[(r + q) % 4]; g.fillRect(10 + q * 16, 14 + r * 20, 10, 14); }
+  g.fillStyle = '#111'; g.fillRect(10, 98, 44, 18);
+  const vm = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c) });
+  const geo = new THREE.BoxGeometry(1, 1.9, 0.65);
+  const mesh = new THREE.Mesh(geo, [grayMat, grayMat, grayMat, grayMat, grayMat, vm]);
+  mesh.position.set(8, DECK + 0.95, 31.65); scene.add(mesh); addCol(7.5, 31.3, 8.5, 31.95);
+  box(-12, 27.5, -8.5, 28.5, DECK, 1.0, woodMat, true);
+  bench(-4, 31.5, 3, true); bench(3, 31.5, 3, true);
+}
+// Halle: Säulen, Startblöcke, Aufsichtsstuhl
+for (const x of [-10.5, 10.5]) for (const z of [-12, 12]) box(x - 0.6, z - 0.6, x + 0.6, z + 0.6, DECK, HALL_H, T.hall.wall, true);
+for (const x of [-5, -3, -1, 1, 3, 5]) box(x - 0.35, 18.4, x + 0.35, 19.1, DECK, 0.55, grayMat, true);
+{
+  const cx = 10.5, cz = 0;
+  for (const dx of [-0.5, 0.5]) for (const dz of [-0.5, 0.5]) {
+    const l = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.9, 0.08), grayMat);
+    l.position.set(cx + dx, DECK + 0.95, cz + dz); scene.add(l);
+  }
+  box(cx - 0.65, cz - 0.65, cx + 0.65, cz + 0.65, DECK + 1.9, 0.08, woodMat, false);
+  box(cx + 0.55, cz - 0.65, cx + 0.65, cz + 0.65, DECK + 1.98, 0.9, woodMat, false);
+  addCol(cx - 0.6, cz - 0.6, cx + 0.6, cz + 0.6);
+}
+
+// ---- Ausgänge ----
+function signTex(text, bg, fg) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0, 0, 256, 64); g.strokeStyle = fg; g.lineWidth = 4; g.strokeRect(3, 3, 250, 58);
+  g.fillStyle = fg; g.font = 'bold 38px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, 128, 34);
+  return new THREE.CanvasTexture(c);
+}
+const redSign = signTex('AUSGANG', '#3d0a0a', '#ff7b7b'), greenSign = signTex('AUSGANG', '#0a3d1c', '#8dffb2');
+function exitDoor(x, z1, z2, facing) {
+  const dm = new THREE.MeshLambertMaterial({ color: 0x5a6a70 });
+  const door = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.3, z2 - z1), dm);
+  door.position.set(x, DECK + 1.15, (z1 + z2) / 2); scene.add(door);
+  const sm = new THREE.MeshBasicMaterial({ map: redSign, fog: false });
+  const s = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.4), sm);
+  s.position.set(x + facing * 0.08, DECK + 2.65, (z1 + z2) / 2); s.rotation.y = facing > 0 ? Math.PI / 2 : -Math.PI / 2; scene.add(s);
+  return sm;
+}
+const realExitSign = exitDoor(19.78, 26, 30, -1);       // Flur, Ostseite
+exitDoor(-33.78, 27, 31, 1);                             // Duschen (Falle)
+
+// Ziel-Markierungen am Beckenende
+const goalMat = new THREE.MeshBasicMaterial({ map: signTex('ZIEL', '#0a3140', '#7fe3ff'), fog: false });
+const goalN = new THREE.Mesh(new THREE.PlaneGeometry(4, 1), goalMat);
+goalN.position.set(0, DECK + 3.0, -HZ + 0.25);
+const goalS = new THREE.Mesh(new THREE.PlaneGeometry(4, 1), goalMat);
+goalS.position.set(8, DECK + 3.0, HZ - 0.25); goalS.rotation.y = Math.PI;
+scene.add(goalN, goalS);
+
+// ================= Vorräte =================
+const supplies = [];
+{
+  const spots = [[-22, -8], [-28.5, -2], [22, 7], [28, 1.5], [-24, 28], [-31, 30],
+                 [10, 28], [-6, 30], [-12, -21], [12, 21]];
+  const geo = new THREE.CylinderGeometry(0.09, 0.09, 0.24, 12);
+  for (const [x, z] of spots) {
+    const g = new THREE.Group();
+    g.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xff8a2a })));
+    const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.04, 12), new THREE.MeshBasicMaterial({ color: 0xffe36a }));
+    cap.position.y = 0.14; g.add(cap);
+    const halo = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10),
+      new THREE.MeshBasicMaterial({ color: 0xffa040, transparent: true, opacity: 0.18, depthWrite: false }));
+    g.add(halo);
+    g.position.set(x, DECK + 1.0, z); scene.add(g);
+    supplies.push({ g, x, z, taken: false });
+  }
+}
+
+// ================= Hai =================
+const shark = (() => {
   const g = new THREE.Group();
   const mat = new THREE.MeshLambertMaterial({ color: 0x4b5963 });
-  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), mat);
-  body.scale.set(0.9, 0.8, 2.7); g.add(body);
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), mat); body.scale.set(0.9, 0.8, 2.7); g.add(body);
   const belly = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 10), new THREE.MeshLambertMaterial({ color: 0xd9e3e8 }));
   belly.scale.set(0.8, 0.5, 2.5); belly.position.y = -0.35; g.add(belly);
   const tail = new THREE.Group(); tail.position.z = -2.6; g.add(tail);
-  const tc = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.8, 10), mat);
-  tc.rotation.x = -Math.PI / 2; tc.position.z = -0.8; tail.add(tc);
-  const tf = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.1, 4), mat);
-  tf.position.set(0, 0.2, -1.6); tail.add(tf);
+  const tc = new THREE.Mesh(new THREE.ConeGeometry(0.55, 1.8, 10), mat); tc.rotation.x = -Math.PI / 2; tc.position.z = -0.8; tail.add(tc);
+  const tf = new THREE.Mesh(new THREE.ConeGeometry(0.5, 1.1, 4), mat); tf.position.set(0, 0.2, -1.6); tail.add(tf);
   const fin = new THREE.Mesh(new THREE.ConeGeometry(0.38, 1.5, 4), new THREE.MeshLambertMaterial({ color: 0x3a464f }));
   fin.position.set(0, 0.95, 0.2); fin.rotation.x = -0.25; g.add(fin);
   for (const dx of [-0.55, 0.55]) {
-    const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), new THREE.MeshBasicMaterial({ color: 0x000000 }));
-    e.position.set(dx, 0.15, 2.0); g.add(e);
+    const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), new THREE.MeshBasicMaterial({ color: 0 })); e.position.set(dx, 0.15, 2.0); g.add(e);
   }
-  g.position.y = -0.9;
-  scene.add(g);
-  return { g, tail, x: 0, z: 0, ang: rand(0, 6.28), alert: 0, lastX: 0, lastZ: 0, wpX: 0, wpZ: 0, wpT: 0, phase: 0 };
+  g.position.y = -0.9; scene.add(g);
+  return { g, tail, x: 0, z: -12, ang: 0, alert: 0, lx: 0, lz: 0, wx: 0, wz: 0, wt: 0, ph: 0, mode: 'wander' };
+})();
+const SH = { x: BASIN.x - 0.7, z: BASIN.z - 0.8 };    // Bewegungsgrenzen im Becken
+
+// ================= Spielzustand =================
+const player = { x: 0, z: -21, yaw: Math.PI, pitch: 0, stamina: 1, eye: EYE_DECK, bob: 0, inWater: false, moving: false, sprinting: false, regenDelay: 0, drown: 0 };
+let state = 'menu';            // menu | play | paused | over
+let laps = 0, target = 'S', finished = false, runTime = 0;
+let msgT = 0, heartT = 0, eventT = 8, dripT = 4, dimT = 0;
+
+function setOverlay(title, text, hint, color) {
+  $('ovT').textContent = title; $('ovT').style.color = color || '';
+  $('ovP').innerHTML = text; $('ovH').style.display = 'none'; $('go').textContent = hint;
+}
+function showMsg(t, dur = 2.6) { $('msg').textContent = t; $('msg').style.opacity = 1; msgT = dur; }
+
+function resetGame() {
+  laps = 0; target = 'S'; finished = false; runTime = 0; dimT = 0;
+  Object.assign(player, { x: 0, z: -21, yaw: Math.PI, pitch: 0, stamina: 1, eye: EYE_DECK, inWater: false, drown: 0, regenDelay: 0 });
+  for (const s of supplies) { s.taken = false; s.g.visible = true; }
+  Object.assign(shark, { x: 0, z: 10, ang: Math.PI, alert: 0, mode: 'wander', wt: 0 });
+  realExitSign.map = redSign; realExitSign.needsUpdate = true;
+  goalS.visible = true; goalN.visible = false;
+  $('vig').style.opacity = 0; $('drown').style.opacity = 0; $('dim').style.opacity = 0;
 }
 
-// ---------- Spielzustand ----------
-const player = { x: 0, z: 0, yaw: 0, pitch: 0, stamina: 1, exhausted: false, regenDelay: 0, bob: 0, sprinting: false, moving: false };
-let sharks = [];
-let level = 1, state = 'menu';       // menu | play | paused | dead
-let msgT = 0, shake = 0, heartT = 0;
-
-function resolve(o, r) {
-  o.x = clamp(o.x, -P + r + 0.3, P - r - 0.3);
-  o.z = clamp(o.z, -P + r + 0.3, P - r - 0.3);
-  for (const p of pillars) {
-    const dx = o.x - p.x, dz = o.z - p.z, d = Math.hypot(dx, dz), min = p.r + r;
-    if (d < min) { const k = d > 0.001 ? min / d : 1; o.x = p.x + (d > 0.001 ? dx * k : min); o.z = p.z + (d > 0.001 ? dz * k : 0); }
-  }
-}
-function freeSpot(minFromX, minFromZ, minDist) {
-  for (let i = 0; i < 200; i++) {
-    const x = rand(-P + 4, P - 4), z = rand(-P + 4, P - 4);
-    if (pillars.some(p => Math.hypot(x - p.x, z - p.z) < 2.5)) continue;
-    if (Math.hypot(x - minFromX, z - minFromZ) < minDist) continue;
-    return { x, z };
-  }
-  return { x: 0, z: 0 };
-}
-
-function setupLevel() {
-  // Ausgang an einer zufälligen Wand
-  const side = Math.floor(rand(0, 4)), t = rand(-P + 8, P - 8);
-  const e = [[t, -P + 0.4, 0], [t, P - 0.4, Math.PI], [-P + 0.4, t, Math.PI / 2], [P - 0.4, t, -Math.PI / 2]][side];
-  exitGroup.position.set(e[0], 0, e[1]); exitGroup.rotation.y = e[2];
-  exitPos.x = e[0]; exitPos.z = e[1];
-
-  const s = freeSpot(exitPos.x, exitPos.z, 55);
-  player.x = s.x; player.z = s.z; player.stamina = 1; player.exhausted = false;
-  player.yaw = Math.atan2(-(exitPos.x - s.x), -(exitPos.z - s.z));
-  player.pitch = 0;
-
-  for (const sh of sharks) scene.remove(sh.g);
-  sharks = [];
-  const n = Math.min(1 + Math.floor((level - 1) / 2), 4);
-  for (let i = 0; i < n; i++) {
-    const sh = makeShark();
-    const p = freeSpot(player.x, player.z, 28);
-    sh.x = p.x; sh.z = p.z; sh.wpT = 0; sharks.push(sh);
-  }
-}
-
-// ---------- Eingabe ----------
+// ================= Eingabe =================
 const keys = {};
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) e.preventDefault();
-  if (e.code === 'KeyR' && state === 'dead') restart();
+  if (e.code === 'KeyR' && state === 'over') begin();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
@@ -260,211 +469,289 @@ document.addEventListener('mousemove', e => {
 document.addEventListener('pointerlockchange', () => {
   if (document.pointerLockElement !== canvas && state === 'play') pause();
 });
-
 function begin() {
   initAudio();
-  if (state === 'dead') { restart(); return; }
+  if (state === 'over') resetGame();
   state = 'play'; $('ov').classList.add('hidden');
   try { canvas.requestPointerLock(); } catch (e) {}
 }
 function pause() {
   if (state !== 'play') return;
-  state = 'paused';
-  $('ov').classList.remove('hidden'); $('go').textContent = 'Pausiert – klicken zum Weiterspielen';
+  state = 'paused'; setOverlay('PAUSE', '', 'Klicken zum Weiterspielen');
+  $('ov').classList.remove('hidden');
 }
-$('ov').addEventListener('click', () => {
-  if (state === 'menu' || state === 'paused' || state === 'dead') begin();
-});
+$('ov').addEventListener('click', () => { if (state !== 'play') begin(); });
 
-function restart() {
-  level = 1; setupLevel();
-  state = 'play'; $('ov').classList.add('hidden'); $('vig').style.opacity = 0; shake = 0;
-  try { canvas.requestPointerLock(); } catch (e) {}
-}
-
-// ---------- Audio (alles per WebAudio erzeugt, keine Dateien) ----------
+// ================= Audio (komplett synthetisch) =================
 let AC = null, master = null;
 function initAudio() {
   if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
   try {
     AC = new (window.AudioContext || window.webkitAudioContext)();
     master = AC.createGain(); master.gain.value = 0.7; master.connect(AC.destination);
-    // Neonlicht-Brummen
     const hum = AC.createGain(); hum.gain.value = 0.05; hum.connect(master);
     for (const f of [60, 120.5, 181]) {
       const o = AC.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
       const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 400;
       o.connect(lp); lp.connect(hum); o.start();
     }
-    // Wasserrauschen
     const buf = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate), d = buf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
     const n = AC.createBufferSource(); n.buffer = buf; n.loop = true;
     const nf = AC.createBiquadFilter(); nf.type = 'lowpass'; nf.frequency.value = 500;
-    const ng = AC.createGain(); ng.gain.value = 0.09;
+    const ng = AC.createGain(); ng.gain.value = 0.08;
     n.connect(nf); nf.connect(ng); ng.connect(master); n.start();
   } catch (e) { AC = null; }
 }
-function thump(freq, vol, len) {
+function tone(type, f0, f1, vol, len) {
   if (!AC) return;
   const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
-  o.type = 'sine'; o.frequency.setValueAtTime(freq, t); o.frequency.exponentialRampToValueAtTime(freq * 0.5, t + len);
+  o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + len);
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + len);
   o.connect(g); g.connect(master); o.start(t); o.stop(t + len + 0.05);
 }
-function stinger() {
-  if (!AC) return;
-  for (const f of [220, 233, 311]) {
-    const o = AC.createOscillator(), g = AC.createGain(), t = AC.currentTime;
-    o.type = 'sawtooth'; o.frequency.value = f;
-    g.gain.setValueAtTime(0.2, t); g.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
-    o.connect(g); g.connect(master); o.start(t); o.stop(t + 1.5);
+const thump = (f, v, l) => tone('sine', f, f * 0.5, v, l);
+const drip = () => tone('sine', rand(900, 1500), 400, 0.12, 0.12);
+const knock = () => { tone('square', 150, 80, 0.25, 0.08); setTimeout(() => tone('square', 140, 70, 0.25, 0.08), 180); setTimeout(() => tone('square', 150, 70, 0.3, 0.1), 420); };
+function stinger() { for (const f of [220, 233, 311]) tone('sawtooth', f, f, 0.2, 1.4); }
+function chime() { tone('sine', 660, 660, 0.18, 0.5); setTimeout(() => tone('sine', 880, 880, 0.18, 0.7), 150); }
+
+// ================= Physik / KI =================
+function resolveCols(o, r) {
+  for (const b of cols) {
+    const cx = clamp(o.x, b.x1, b.x2), cz = clamp(o.z, b.z1, b.z2);
+    const dx = o.x - cx, dz = o.z - cz, d2 = dx * dx + dz * dz;
+    if (d2 >= r * r) continue;
+    if (d2 > 1e-8) { const d = Math.sqrt(d2), k = (r - d) / d; o.x += dx * k; o.z += dz * k; }
+    else { // Mittelpunkt in der Box: entlang der kürzesten Achse herausschieben
+      const l = o.x - b.x1, rr = b.x2 - o.x, t = o.z - b.z1, bt = b.z2 - o.z, m = Math.min(l, rr, t, bt);
+      if (m === l) o.x = b.x1 - r; else if (m === rr) o.x = b.x2 + r; else if (m === t) o.z = b.z1 - r; else o.z = b.z2 + r;
+    }
   }
 }
+const inBasin = (x, z) => Math.abs(x) < BASIN.x && Math.abs(z) < BASIN.z;
 
-// ---------- Hai-KI ----------
-function turnToward(cur, target, maxStep) {
-  let d = target - cur;
-  while (d > Math.PI) d -= 6.2832;
-  while (d < -Math.PI) d += 6.2832;
-  return cur + clamp(d, -maxStep, maxStep);
+function turnToward(cur, tgt, step) {
+  let d = tgt - cur;
+  while (d > Math.PI) d -= 6.2832; while (d < -Math.PI) d += 6.2832;
+  return cur + clamp(d, -step, step);
 }
 
-function updateShark(s, dt) {
+function updateShark(dt) {
+  const s = shark;
   const dx = player.x - s.x, dz = player.z - s.z, dist = Math.hypot(dx, dz);
-  const sight = player.sprinting ? 30 : (player.moving ? 15 : 9);
-  const wasHunting = s.alert > 0;
-  if (dist < sight || dist < 6) { s.alert = 6; s.lastX = player.x; s.lastZ = player.z; }
-  else s.alert = Math.max(0, s.alert - dt);
-  if (!wasHunting && s.alert > 0) { showMsg('Der Hai hat dich bemerkt!'); thump(70, 0.5, 0.5); }
-
   let tx, tz, speed, turn;
-  if (s.alert > 0) {
-    tx = s.lastX; tz = s.lastZ;
-    speed = Math.min(4.8 + level * 0.35, 6.0); turn = 2.6;
-  } else {
-    s.wpT -= dt;
-    if (s.wpT <= 0 || Math.hypot(s.wpX - s.x, s.wpZ - s.z) < 3) {
-      const p = freeSpot(s.x, s.z, 10); s.wpX = p.x; s.wpZ = p.z; s.wpT = 9;
+  if (player.inWater) {
+    const sight = player.sprinting ? 22 : (player.moving ? 12 : 6);
+    if (dist < sight) { if (s.alert <= 0) { showMsg('Etwas bewegt sich unter dir …', 2.2); thump(70, 0.5, 0.6); } s.alert = 7; s.lx = player.x; s.lz = player.z; }
+  }
+  s.alert = Math.max(0, s.alert - dt);
+  const hunting = s.alert > 0;
+  if (hunting) { tx = s.lx; tz = s.lz; speed = Math.min(3.1 + laps * 0.13, 4.3); turn = 2.6; s.mode = 'hunt'; }
+  else {
+    // An Land: am Beckenrand lauern, wenn der Spieler nah ist
+    const nx = clamp(player.x, -SH.x, SH.x), nz = clamp(player.z, -SH.z, SH.z);
+    if (!player.inWater && Math.hypot(player.x - nx, player.z - nz) < 9) { tx = nx; tz = nz; speed = 2.2; turn = 1.8; s.mode = 'stalk'; }
+    else {
+      s.wt -= dt;
+      if (s.wt <= 0 || Math.hypot(s.wx - s.x, s.wz - s.z) < 2) { s.wx = rand(-SH.x, SH.x); s.wz = rand(-SH.z, SH.z); s.wt = 8; }
+      tx = s.wx; tz = s.wz; speed = 1.5; turn = 1.1; s.mode = 'wander';
     }
-    tx = s.wpX; tz = s.wpZ; speed = 2.6; turn = 1.2;
   }
   s.ang = turnToward(s.ang, Math.atan2(tx - s.x, tz - s.z), turn * dt);
-  s.x += Math.sin(s.ang) * speed * dt;
-  s.z += Math.cos(s.ang) * speed * dt;
-  resolve(s, 1.4);
-  s.phase += dt * (3 + speed);
-  s.g.position.x = s.x; s.g.position.z = s.z;
-  s.g.rotation.y = s.ang;
-  s.tail.rotation.y = Math.sin(s.phase) * 0.45;
-  s.g.position.y = -0.9 + Math.sin(s.phase * 0.5) * 0.04;
+  const step = (Math.hypot(tx - s.x, tz - s.z) < 0.6 ? 0 : speed) * dt;
+  s.x = clamp(s.x + Math.sin(s.ang) * step, -SH.x, SH.x);
+  s.z = clamp(s.z + Math.cos(s.ang) * step, -SH.z, SH.z);
+  s.ph += dt * (3 + speed * 1.5);
+  s.g.position.set(s.x, -0.9 + Math.sin(s.ph * 0.5) * 0.04, s.z);
+  s.g.rotation.y = s.ang; s.tail.rotation.y = Math.sin(s.ph) * 0.45;
   return dist;
 }
 
-// ---------- Hilfsfunktionen UI ----------
-function showMsg(text) { $('msg').textContent = text; $('msg').style.opacity = 1; msgT = 2.2; }
+function zoneAt(x, z) {
+  if (Math.abs(x) < HX && Math.abs(z) < HZ) return 'hall';
+  if (x < -20 && z > 22) return 'shower';
+  if (x < -14 && z < 2.5) return 'a';
+  if (x > 14 && x < 30 && z > -2.5 && z < 14.5) return 'b';
+  return 'flur';
+}
+const ZONES = {
+  hall:   { c: new THREE.Color(0xa8dde6), d: 0.028 },
+  a:      { c: new THREE.Color(0xe6d6a2), d: 0.055 },
+  b:      { c: new THREE.Color(0xcde3c4), d: 0.055 },
+  shower: { c: new THREE.Color(0xcfe9f1), d: 0.055 },
+  flur:   { c: new THREE.Color(0xdcd993), d: 0.05 },
+};
 
-function die() {
-  state = 'dead'; shake = 1; stinger();
-  if (document.pointerLockElement) document.exitPointerLock();
-  const done = level - 1;
-  if (done > best) { best = done; saveBest(); }
-  $('ov').classList.remove('hidden');
-  $('ov').innerHTML = '<h1 style="color:#ff7a7a">GEFRESSEN</h1><p>Ausgänge erreicht: <b>' + done + '</b> · Rekord: <b>' + best + '</b></p><div class="go">Klicken oder R für einen neuen Versuch</div>';
+function teleportToPool() {
+  player.x = rand(-4, 4); player.z = rand(-10, 10);
+  player.eye = EYE_WATER; player.inWater = true; player.stamina = Math.max(player.stamina, 0.15);
+  if (Math.hypot(shark.x - player.x, shark.z - player.z) < 14) { shark.x = clamp(-player.x, -SH.x, SH.x); shark.z = player.z > 0 ? -SH.z : SH.z; }
+  shark.alert = 0;
+  showMsg('Jeder Ausgang führt zurück ins Wasser …', 3.2); thump(45, 0.6, 0.9);
 }
 
-// ---------- Update ----------
+function die(title, text) {
+  state = 'over'; stinger();
+  if (document.pointerLockElement) document.exitPointerLock();
+  setOverlay(title, text + '<br>Bahnen: <b>' + laps + '/' + LAPS + '</b>', 'Klicken oder R für einen neuen Versuch', '#ff7a7a');
+  $('ov').classList.remove('hidden');
+}
+function win() {
+  state = 'over'; chime();
+  if (document.pointerLockElement) document.exitPointerLock();
+  const t = runTime;
+  if (!best || t < best) { best = t; saveBest(); }
+  const f = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+  setOverlay('ENTKOMMEN', 'Du stehst draußen. Es riecht nach Herbst und Chlor.<br>Zeit: <b>' + f(t) + '</b> · Bestzeit: <b>' + f(best) + '</b>', 'Klicken für einen neuen Versuch', '#8dffb2');
+  $('ov').classList.remove('hidden');
+}
+
+// ================= Update =================
 function update(dt, time) {
-  // Lichtflackern & Wellen laufen immer
   waveTex.offset.x = time * 0.01; waveTex.offset.y = time * 0.006;
-  const flick = Math.random() < 0.012 ? rand(0.55, 0.85) : 1;
-  panelMat.color.setScalar(flick); hemi.intensity = 1.15 * (0.85 + 0.15 * flick);
-
   if (msgT > 0) { msgT -= dt; if (msgT <= 0) $('msg').style.opacity = 0; }
-  if (state === 'dead') {
-    shake = Math.max(0, shake - dt * 0.6);
-    camera.position.set(player.x + rand(-1, 1) * shake * 0.1, EYE, player.z + rand(-1, 1) * shake * 0.1);
-    return;
-  }
-  if (state !== 'play') return;
 
-  // Spieler
+  // Lichtflackern, gelegentlich Stromausfall
+  dimT = Math.max(0, dimT - dt);
+  const flick = dimT > 0 ? 0.08 : (Math.random() < 0.012 ? rand(0.55, 0.85) : 1);
+  panelMat.color.setScalar(flick); hemi.intensity = 1.15 * (dimT > 0 ? 0.18 : (0.85 + 0.15 * flick));
+
+  if (state !== 'play') { applyCamera(); return; }
+  runTime += dt;
+
+  // Eingabe
   let mx = 0, mz = 0;
-  if (keys.KeyW || keys.ArrowUp) mz -= 1;
-  if (keys.KeyS || keys.ArrowDown) mz += 1;
-  if (keys.KeyA || keys.ArrowLeft) mx -= 1;
-  if (keys.KeyD || keys.ArrowRight) mx += 1;
+  if (keys.KeyW || keys.ArrowUp) mz -= 1; if (keys.KeyS || keys.ArrowDown) mz += 1;
+  if (keys.KeyA || keys.ArrowLeft) mx -= 1; if (keys.KeyD || keys.ArrowRight) mx += 1;
   const l = Math.hypot(mx, mz);
   player.moving = l > 0;
-  const wantSprint = player.moving && (keys.ShiftLeft || keys.ShiftRight) && !player.exhausted && player.stamina > 0;
-  player.sprinting = wantSprint;
-  if (wantSprint) { player.stamina -= dt / 5; player.regenDelay = 1.2; if (player.stamina <= 0) { player.stamina = 0; player.exhausted = true; } }
-  else { player.regenDelay -= dt; if (player.regenDelay <= 0) player.stamina = Math.min(1, player.stamina + dt / 8); }
-  if (player.exhausted && player.stamina > 0.3) player.exhausted = false;
+  const shift = keys.ShiftLeft || keys.ShiftRight;
+  const wasWater = player.inWater;
+  player.inWater = inBasin(player.x, player.z);
+  if (player.inWater && !wasWater) { thump(200, 0.25, 0.25); }
+
+  // Ausdauer
+  let speed;
+  if (player.inWater) {
+    const exhausted = player.stamina <= 0;
+    player.sprinting = player.moving && shift && !exhausted;
+    const drain = !player.moving ? 1 / 110 : (player.sprinting ? 1 / 22 : 1 / 55);
+    player.stamina = Math.max(0, player.stamina - drain * dt);
+    speed = exhausted ? 0.8 : (player.sprinting ? SWIM_SPRINT : SWIM);
+    player.drown = exhausted ? player.drown + dt : Math.max(0, player.drown - dt * 2);
+    if (player.drown > 6) { die('ERTRUNKEN', 'Deine Kraft hat nicht gereicht.'); return; }
+  } else {
+    player.sprinting = player.moving && shift;
+    speed = player.sprinting ? RUN : WALK;
+    player.drown = 0;
+    player.regenDelay -= dt;
+    player.stamina = Math.min(1, player.stamina + dt / 50);
+  }
   if (l) {
-    const sp = (wantSprint ? SPRINT : WALK) * (player.exhausted ? 0.75 : 1);
     const sin = Math.sin(player.yaw), cos = Math.cos(player.yaw);
-    player.x += ((mx * cos + mz * sin) / l) * sp * dt;
-    player.z += ((-mx * sin + mz * cos) / l) * sp * dt;
-    player.bob += dt * (wantSprint ? 9 : 5);
-    resolve(player, 0.5);
+    player.x += ((mx * cos + mz * sin) / l) * speed * dt;
+    player.z += ((-mx * sin + mz * cos) / l) * speed * dt;
+    player.bob += dt * (player.inWater ? (player.sprinting ? 6 : 3.5) : (player.sprinting ? 9 : 6));
+    resolveCols(player, 0.35);
+  }
+  player.inWater = inBasin(player.x, player.z);
+  const eyeT = player.inWater ? EYE_WATER : EYE_DECK;
+  player.eye += (eyeT - player.eye) * Math.min(1, dt * 7);
+
+  // Bahnen zählen
+  if (player.inWater && !finished) {
+    if (target === 'S' && player.z > BASIN.z - 0.9) laps++, target = 'N', lapDone();
+    else if (target === 'N' && player.z < -BASIN.z + 0.9) laps++, target = 'S', lapDone();
   }
 
-  // Haie
-  let nearest = 999;
-  for (const s of sharks) {
-    const d = updateShark(s, dt);
-    nearest = Math.min(nearest, d);
-    if (d < 2.3) { die(); return; }
+  // Hai
+  const dist = updateShark(dt);
+  if (player.inWater && dist < 2.3) { die('GEFRESSEN', 'Es war nicht allein im Wasser.'); return; }
+
+  // Vorräte
+  for (const s of supplies) {
+    if (s.taken) continue;
+    s.g.rotation.y += dt * 1.5; s.g.position.y = DECK + 1.0 + Math.sin(time * 2 + s.x) * 0.06;
+    if (Math.hypot(player.x - s.x, player.z - s.z) < 1.1) {
+      s.taken = true; s.g.visible = false;
+      player.stamina = Math.min(1, player.stamina + 0.6); chime();
+      showMsg('Getränk gefunden – Ausdauer aufgefüllt', 2);
+    }
   }
 
-  // Herzschlag + Rand-Rötung je näher der Hai
-  const danger = clamp(1 - (nearest - 3) / 22, 0, 1);
-  $('vig').style.opacity = (danger * danger * 0.95).toFixed(2);
+  // Ausgangstüren
+  const z = zoneAt(player.x, player.z);
+  if (z === 'flur' && player.x > 19.2 && player.z > 26 && player.z < 30) {
+    if (finished) { win(); return; } else teleportToPool();
+  }
+  if (z === 'shower' && player.x < -33.2 && player.z > 27 && player.z < 31) teleportToPool();
+
+  // Atmosphäre: Nebel je Zone, Herzschlag, Zufallsereignisse
+  const zn = ZONES[z];
+  scene.fog.color.lerp(zn.c, Math.min(1, dt * 1.5)); scene.background.copy(scene.fog.color);
+  scene.fog.density += (zn.d - scene.fog.density) * Math.min(1, dt * 1.5);
+
+  const danger = player.inWater ? clamp(1 - (dist - 3) / 14, 0, 1) : (shark.mode === 'stalk' ? 0.15 : 0);
+  $('vig').style.opacity = (danger * danger * 0.9).toFixed(2);
+  $('drown').style.opacity = clamp(player.drown / 6, 0, 1).toFixed(2);
   heartT -= dt;
-  if (heartT <= 0 && danger > 0.05) {
-    thump(55, 0.35 + danger * 0.4, 0.18); setTimeout(() => thump(48, 0.25 + danger * 0.3, 0.16), 160);
-    heartT = 1.15 - danger * 0.75;
+  if (heartT <= 0 && (danger > 0.05 || player.drown > 0.5)) {
+    const k = Math.max(danger, player.drown / 6);
+    thump(55, 0.3 + k * 0.4, 0.18); setTimeout(() => thump(48, 0.2 + k * 0.3, 0.16), 160);
+    heartT = 1.15 - k * 0.75;
   }
-
-  // Ausgang
-  if (Math.hypot(player.x - exitPos.x, player.z - exitPos.z) < 2.6) {
-    level++; if (level - 1 > best) { best = level - 1; saveBest(); }
-    showMsg('Ausgang erreicht – Ebene ' + level); thump(120, 0.4, 0.6);
-    setupLevel();
-  }
-
-  // Kamera
-  camera.position.set(player.x, EYE + Math.sin(player.bob) * 0.05, player.z);
-  camera.rotation.set(player.pitch, player.yaw, 0);
+  dripT -= dt; if (dripT <= 0) { drip(); dripT = rand(2.5, 9); }
+  eventT -= dt;
+  if (eventT <= 0) { dimT = rand(0.7, 1.6); knock(); eventT = rand(25, 55); }
 
   // HUD
   $('fill').style.width = (player.stamina * 100).toFixed(0) + '%';
-  $('fill').style.background = player.exhausted ? '#ff8a6a' : '#7fe3ff';
+  $('fill').style.background = player.stamina <= 0 ? '#ff5a5a' : (player.stamina < 0.25 ? '#ff8a6a' : '#7fe3ff');
+  const left = supplies.filter(s => !s.taken).length;
+  $('sup').innerHTML = 'Getränke übrig: <b>' + left + '</b>';
+  $('lap').innerHTML = finished
+    ? 'Alle Bahnen geschafft!<small>Der Ausgang im Eingangsflur ist offen (südlich der Halle).</small>'
+    : 'Bahn <b>' + Math.min(laps + 1, LAPS) + '/' + LAPS + '</b><small>Schwimm zum ' + (target === 'S' ? 'Südende (Startblöcke)' : 'Nordende') + ' des Beckens</small>';
 }
 
-function updateHud() {
-  $('lvl').innerHTML = 'Ebene <b>' + level + '</b><br><small>Rekord ' + best + '</small>';
+function lapDone() {
+  chime();
+  if (laps >= LAPS) {
+    finished = true; goalN.visible = goalS.visible = false;
+    realExitSign.map = greenSign; realExitSign.needsUpdate = true;
+    showMsg('Zehn Bahnen. Der Ausgang im Flur ist jetzt offen.', 4);
+  } else {
+    goalN.visible = target === 'N'; goalS.visible = target === 'S';
+    showMsg('Bahn ' + laps + ' geschafft', 1.6);
+  }
 }
 
-// ---------- Loop ----------
-setupLevel();
-camera.position.set(player.x, EYE, player.z); camera.rotation.set(0, player.yaw, 0);
+function applyCamera() {
+  const bob = Math.sin(player.bob) * (player.inWater ? 0.07 : 0.04);
+  camera.position.set(player.x, player.eye + bob, player.z);
+  camera.rotation.set(player.pitch, player.yaw, player.inWater ? Math.sin(player.bob * 0.5) * 0.015 : 0);
+}
+
+// ================= Loop =================
+resetGame();
 let last = performance.now();
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
   update(dt, now / 1000);
-  updateHud();
+  if (state === 'play') applyCamera();
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
 
-// Test-Schnittstelle (nur lesen / Helfer)
+// Test-Schnittstelle
 window.__g = {
-  get state() { return state; }, get level() { return level; },
-  player, sharks: () => sharks.map(s => ({ x: s.x, z: s.z, alert: s.alert })),
-  exit: exitPos, start: begin, teleport(x, z) { player.x = x; player.z = z; }
+  get state() { return state; }, get laps() { return laps; }, get finished() { return finished; },
+  player, shark, supplies, start: begin,
+  teleport(x, z) { player.x = x; player.z = z; player.inWater = inBasin(x, z); player.eye = player.inWater ? EYE_WATER : EYE_DECK; },
+  look(yaw, pitch) { player.yaw = yaw; player.pitch = pitch || 0; },
+  setStamina(v) { player.stamina = v; }
 };
 })();
 </script>
